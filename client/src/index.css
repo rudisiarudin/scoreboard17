@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Selalu gunakan tema terang */
+:root { color-scheme: light; }
+
+/* Reset ringan */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Base body pakai Tailwind */
+body {
+  @apply bg-white text-slate-900 antialiased;
+}
+
+/* Utility: sembunyikan scrollbar horizontal pada container tertentu */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* —— STOP. Jangan tambahkan aturan global lain di bawah ini ——
+   khususnya: JANGAN ada rule global untuk `button`, `a`, dll,
+   biar warna Tailwind tidak ketimpa. */
+/* ===== Score input polish ===== */
+input.score-input::-webkit-outer-spin-button,
+input.score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.score-input { -moz-appearance: textfield; appearance: textfield; }
+
+
+/* optional: angka tegas */
+.score-input { font-variant-numeric: tabular-nums; }
