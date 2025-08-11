@@ -7,7 +7,7 @@ const DEFAULT_TEAM_IDS = ["team-1","team-2","team-3","team-4","team-5","team-6"]
 
 export function createDefaultTeams(): Team[] {
   const names = ["Kelompok 1","Kelompok 2","Kelompok 3","Kelompok 4","Kelompok 5","Kelompok 6"];
-  const reds  = ["#b91c1c","#dc2626","#ef4444","#f97316","#fb7185","#e11d48"];
+  const reds  = ["#2a05faff","#00c020ff","#ee0d0dff","#f97316","#ff647bff","#b30095ff"];
   return names.map((n,i)=>({ id: DEFAULT_TEAM_IDS[i], name:n, color: reds[i%reds.length] }));
 }
 
