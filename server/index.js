@@ -1,21 +1,25 @@
-const { WebSocketServer } = require('ws');
-
+const http = require("http");
+const WebSocket = require("ws");
 const PORT = process.env.PORT || 3001;
-const wss = new WebSocketServer({ port: PORT });
 
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Scoreboard WS alive\n");
+});
+
+const wss = new WebSocket.Server({ server });
 let latestState = null;
 
-wss.on('connection', (ws) => {
-  if (latestState) { try { ws.send(JSON.stringify(latestState)); } catch {} }
-  ws.on('message', (msg) => {
+wss.on("connection", (ws) => {
+  if (latestState) ws.send(JSON.stringify({ type: "state", payload: latestState }));
+  ws.on("message", (msg) => {
     try {
-      const data = JSON.parse(msg.toString());
-      if (data.type === 'ping') return;
-      if (data.type === 'state') {
-        latestState = { type: 'state', payload: data.payload, source: data.source };
+      const data = JSON.parse(msg);
+      if (data?.type === "state") {
+        latestState = data.payload;
         wss.clients.forEach((client) => {
-          if (client !== ws && client.readyState === 1) {
-            try { client.send(JSON.stringify(latestState)); } catch {}
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: "state", payload: latestState }));
           }
         });
       }
@@ -23,4 +27,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log('WS server on ws://localhost:' + PORT);
+server.listen(PORT, () => console.log("WS server listening on", PORT));
