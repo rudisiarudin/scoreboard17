@@ -1,8 +1,10 @@
 // src/components/PodiumXL.tsx
 import type { ReactNode } from "react";
 import { Crown, Trophy, Medal } from "lucide-react";
+import { motion } from "framer-motion";
 import type { Team } from "@/types";
 
+// Tipe data untuk peringkat
 type Ranked = Array<Team & { total: number }>;
 
 export default function PodiumXL({ ranked }: { ranked: Ranked }) {
@@ -19,7 +21,14 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
 
   const cfg: Record<
     1 | 2 | 3,
-    { bg: string; ring: string; icon: ReactNode; height: string; badge: string; numeral: string }
+    {
+      bg: string;
+      ring: string;
+      icon: ReactNode;
+      height: string;
+      badge: string;
+      numeral: string;
+    }
   > = {
     1: {
       bg: "from-yellow-300/70 to-amber-200/80",
@@ -47,22 +56,34 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
     },
   };
 
+  // pengaturan animasi per tempat agar tidak serentak
+  const delays: Record<1 | 2 | 3, number> = { 1: 0, 2: 0.25, 3: 0.5 };
+  const distances: Record<1 | 2 | 3, number> = { 1: 14, 2: 10, 3: 8 }; // jarak naik-turun (px)
+  const durations: Record<1 | 2 | 3, number> = { 1: 4.5, 2: 4.2, 3: 4.0 };
+
   return (
     <div className="max-w-[1100px] mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-end">
         {tiles.map((t) => {
           const c = cfg[t.place as 1 | 2 | 3];
+          const d = distances[t.place];
+
           return (
-            <div
+            <motion.div
               key={t.id}
-              className={`relative overflow-hidden rounded-2xl bg-gradient-to-b ${c.bg} backdrop-blur
-                          ring ${c.ring} shadow-lg px-5 py-4 flex flex-col justify-between ${c.height}`}
+              className={`relative rounded-2xl bg-gradient-to-b ${c.bg} backdrop-blur ring ${c.ring} shadow-lg px-5 py-4 flex flex-col justify-between ${c.height}`}
+              style={{ willChange: "transform" }}
+              animate={{ y: [0, -d, 0, d, 0] }}
+              transition={{
+                duration: durations[t.place],
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: delays[t.place],
+              }}
             >
               {/* ANGKA BESAR DI KIRI */}
               <div
-                className={`pointer-events-none select-none absolute right-3 md:right-4 top-1/2 -translate-y-1/2
-                            font-black leading-none ${c.numeral}
-                            text-[84px] md:text-[116px]`}
+                className={`pointer-events-none select-none absolute right-3 md:right-4 top-1/2 -translate-y-1/2 font-black leading-none ${c.numeral} text-[84px] md:text-[116px]`}
                 aria-hidden
               >
                 {t.place}
@@ -71,10 +92,7 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
               {/* header */}
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-2">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: t.color }}
-                  />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
                   <span
                     className="text-xl md:text-2xl font-extrabold tracking-wide"
                     style={{ color: t.color }}
@@ -100,7 +118,7 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
 
               {/* alas */}
               <div className="absolute inset-x-5 bottom-2 h-1.5 rounded-full bg-black/5" />
-            </div>
+            </motion.div>
           );
         })}
       </div>
