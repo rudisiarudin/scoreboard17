@@ -105,6 +105,25 @@ export default function App() {
     } catch {}
   }
 
+  // push langsung tanpa debounce (dipakai saat masuk Mode Penonton)
+  async function pushNow() {
+    const { error } = await supabase
+      .from("board")
+      .upsert({ id: ROW_ID, state, version: state.version, updated_at: new Date().toISOString() });
+    if (error) console.error("SUPABASE_UPSERT_ERROR_IMMEDIATE", error);
+  }
+
+  // handler masuk/keluar audience: push dulu, baru ganti hash
+  async function enterAudience() {
+    try {
+      await pushNow();
+    } catch {}
+    location.hash = "#audience";
+  }
+  function exitAudience() {
+    location.hash = "";
+  }
+
   /* ========================= Supabase Realtime ========================= */
 
   // (A) Semua device SUBSCRIBE + bootstrap awal dari server
@@ -209,12 +228,12 @@ export default function App() {
           {/* Floating controls: bottom-right */}
           <div className="fixed right-4 bottom-4 z-40">
             <div className="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-2 rounded-2xl border border-red-200 shadow-lg">
-              <a
-                href="#"
+              <button
+                onClick={exitAudience}
                 className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
               >
                 Keluar Mode Penonton
-              </a>
+              </button>
               <button
                 onClick={toggleFullscreen}
                 className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
@@ -348,12 +367,12 @@ export default function App() {
           {/* Floating controls */}
           <div className="fixed right-4 bottom-4 z-40">
             <div className="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-2 rounded-2xl border border-red-200 shadow-lg">
-              <a
-                href="#audience"
+              <button
+                onClick={enterAudience}
                 className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
               >
                 Mode Penonton
-              </a>
+              </button>
               <button
                 onClick={toggleFullscreen}
                 className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
