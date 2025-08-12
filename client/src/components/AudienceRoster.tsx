@@ -26,11 +26,11 @@ export default function AudienceRoster({ teams }: { teams: Team[] }) {
             </div>
 
             {t.members?.length ? (
-              <ul className="text-sm leading-tight space-y-1 max-h-40 overflow-y-auto pr-1">
+              <ul className="text-sm leading-tight space-y-1 whitespace-normal break-words">
                 {t.members.map((m, i) => (
                   <li key={i} className="flex items-start gap-1">
                     <span className="mt-[6px] w-1.5 h-1.5 rounded-full bg-black/20" />
-                    <span className="truncate">{m}</span>
+                    <span>{m}</span>
                   </li>
                 ))}
               </ul>
