@@ -1,10 +1,13 @@
 // src/types/state.ts
-export enum WSStatus {
-  CONNECTING = "connecting",
-  OPEN = "open",
-  CLOSED = "closed",
-  ERROR = "error",
-}
+
+// Gunakan union + konstanta, bukan enum
+export type WSStatus = "connecting" | "open" | "closed" | "error";
+export const WSStatus = {
+  CONNECTING: "connecting",
+  OPEN: "open",
+  CLOSED: "closed",
+  ERROR: "error",
+} as const;
 
 export type Team = {
   id: string;
@@ -23,7 +26,7 @@ export type Scores = Record<string, Record<string, number>>;
 
 export type BoardState = {
   version: number;
-  title?: string; // ← tambahkan properti opsional ini
+  title?: string; // tetap ada biar literal dengan title lolos
   teams: Team[];
   events: Event[];
   scores: Scores;
