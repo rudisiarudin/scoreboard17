@@ -93,6 +93,14 @@ export default function App() {
     });
   }
 
+  // set tab + simpan lomba aktif ke state global (biar audience lihat judulnya)
+  function setActive(tab: string) {
+    setActiveTab(tab);
+    if (!audienceMode) {
+      bump((s) => ({ ...s, currentEventId: tab === "summary" ? null : tab }));
+    }
+  }
+
   async function toggleFullscreen() {
     try {
       if (!document.fullscreenElement) {
@@ -218,6 +226,29 @@ export default function App() {
         <div className="relative mx-auto w-full max-w-[120rem] px-4 lg:px-8 py-6">
           <HeaderPoster />
 
+          {/* Banner judul lomba aktif / klasemen */}
+          {(() => {
+            const ev = state.currentEventId ? state.events.find((x) => x.id === state.currentEventId) : null;
+            return (
+              <div className="mt-4">
+                <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow border border-red-200">
+                  {ev ? (
+                    <div className="text-center">
+                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">
+                        Sedang Dipertandingkan
+                      </div>
+                      <div className="text-sm md:text-base text-neutral-800 font-semibold">
+                        {ev.name} <span className="text-xs text-red-700">· Maks {ev.weight}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm md:text-base text-neutral-800 font-semibold">Klasemen Keseluruhan</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="mt-8 space-y-8">
             <PodiumXL ranked={ranked} />
             <AudienceMatrix ranked={ranked} events={state.events} scores={state.scores} />
@@ -251,11 +282,11 @@ export default function App() {
           {/* Tabs */}
           <div className="mt-6 flex w-full justify-center">
             <div className="flex max-w-full flex-wrap items-center justify-center gap-3 overflow-x-auto no-scrollbar px-1">
-              <TabButton active={activeTab === "summary"} onClick={() => setActiveTab("summary")}>
+              <TabButton active={activeTab === "summary"} onClick={() => setActive("summary")}>
                 Klasemen
               </TabButton>
               {state.events.map((e) => (
-                <TabButton key={e.id} active={activeTab === e.id} onClick={() => setActiveTab(e.id)}>
+                <TabButton key={e.id} active={activeTab === e.id} onClick={() => setActive(e.id)}>
                   {e.name}
                 </TabButton>
               ))}
