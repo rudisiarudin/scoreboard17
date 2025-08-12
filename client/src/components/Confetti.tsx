@@ -1,5 +1,6 @@
 // src/components/Confetti.tsx
 import { useMemo } from "react";
+import type { CSSProperties } from "react";
 import { motion } from "framer-motion";
 
 type Props = {
@@ -9,13 +10,12 @@ type Props = {
 };
 
 export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }: Props) {
-  // warna cerah, senada tema
   const palette = [
     "#F59E0B", "#EF4444", "#10B981", "#3B82F6",
     "#A78BFA", "#EC4899", "#22C55E", "#F97316", "#EAB308",
   ];
 
-  // util RNG deterministik
+  // RNG deterministik
   function makeRand(s0: number) {
     let s = s0 >>> 0;
     return () => ((s = (1664525 * s + 1013904223) >>> 0) / 0xffffffff);
@@ -26,32 +26,29 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
   const flakes = useMemo(() => {
     const arr: Array<{
       key: string;
-      layer: 0 | 1 | 2;        // 0: jauh, 1: tengah, 2: dekat
-      left: number;            // % dari kiri
-      yFrom: number;           // mulai dari atas (negatif px)
-      size: number;            // base size
-      heightFactor: number;    // tinggi relatif (untuk pita)
-      drift: number;           // drift kiri/kanan
-      rotStart: number;        // rot awal
-      rotX: number;            // flip 3D
+      layer: 0 | 1 | 2;
+      left: number;
+      yFrom: number;
+      size: number;
+      heightFactor: number;
+      drift: number;
+      rotStart: number;
+      rotX: number;
       rotY: number;
-      turns: number;           // total derajat rotasi z
+      turns: number;
       delay: number;
       duration: number;
       color: string;
       shape: "rect" | "circle" | "triangle" | "ribbon";
-      blur: number;            // blur untuk layer jauh
+      blur: number;
       opacity: number;
     }> = [];
 
     for (let i = 0; i < pieces; i++) {
-      const r = rand();
-      // layer: jauh(0) lebih kecil & lambat, dekat(2) lebih besar & cepat
       const layer = (rand() < 0.2 ? 0 : rand() < 0.6 ? 1 : 2) as 0 | 1 | 2;
       const left = rand() * 100;
       const yFrom = -50 - rand() * 220;
 
-      // ukuran & durasi berdasar layer
       const base = layer === 2 ? 9 : layer === 1 ? 7 : 5;
       const size = base + Math.floor(rand() * (layer === 2 ? 10 : 7));
       const duration = (layer === 2 ? 6 : layer === 1 ? 8 : 10) + rand() * 4;
@@ -59,13 +56,13 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
       const heightFactor = 0.6 + (i % 3) * 0.25;
       const drift = (rand() * 60 - 30) * (layer === 2 ? 1 : layer === 1 ? 0.8 : 0.6);
       const rotStart = rand() * 360;
-      const turns = 540 + rand() * 540; // lebih banyak flip
+      const turns = 540 + rand() * 540;
       const rotX = rand() * 180 - 90;
       const rotY = rand() * 180 - 90;
 
-      const shapePick = rand();
+      const rShape = rand();
       const shape: "rect" | "circle" | "triangle" | "ribbon" =
-        shapePick > 0.86 ? "ribbon" : shapePick > 0.68 ? "triangle" : shapePick > 0.36 ? "circle" : "rect";
+        rShape > 0.86 ? "ribbon" : rShape > 0.68 ? "triangle" : rShape > 0.36 ? "circle" : "rect";
 
       arr.push({
         key: `f${i}`,
@@ -88,8 +85,7 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
       });
     }
     return arr;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pieces, seed]);
+  }, [pieces, seed]); // seed ikut depend biar konsisten
 
   // ====== sparkle (bintang kecil nyala-mati) ======
   const starlets = useMemo(() => {
@@ -105,17 +101,15 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
       arr.push({
         key: `s${i}`,
         left: rand() * 100,
-        top: 5 + rand() * 40, // atas layar
+        top: 5 + rand() * 40,
         delay: rand() * 3,
         size: 2 + Math.round(rand() * 2),
         hue: palette[Math.floor(rand() * palette.length)],
       });
     }
     return arr;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sparks, seed]);
+  }, [sparks, seed]); // seed ikut depend
 
-  // prefer-reduced-motion: jangan animasi berat
   const reduced =
     typeof window !== "undefined" &&
     window.matchMedia &&
@@ -146,7 +140,6 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
 
       {/* Confetti flakes */}
       {flakes.map((p) => {
-        // bentuk via style
         const isTriangle = p.shape === "triangle";
         const isCircle = p.shape === "circle";
         const isRibbon = p.shape === "ribbon";
@@ -156,7 +149,7 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
           ? Math.max(16, Math.round(p.size * (1.8 + p.heightFactor)))
           : Math.max(4, Math.round(p.size * p.heightFactor));
 
-        const commonStyle: React.CSSProperties = {
+        const commonStyle: CSSProperties = {
           left: `${p.left}%`,
           top: -20,
           width,
@@ -167,15 +160,12 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
           filter: `blur(${p.blur}px) drop-shadow(0 1px 1px rgba(0,0,0,0.15))`,
           willChange: "transform",
           transformOrigin: "center",
-          // segitiga pakai clip-path
           clipPath: isTriangle ? "polygon(50% 0%, 0% 100%, 100% 100%)" : undefined,
-          // pita diberi gradien tipis biar berasa ribbon
           backgroundImage: isRibbon
             ? "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(0,0,0,0.12))"
             : undefined,
         };
 
-        // keyframes drift + hembusan angin
         const xFrames = [0, p.drift * 0.5, 0, -p.drift, 0, p.drift * 0.7, 0];
 
         return (
@@ -190,7 +180,7 @@ export default function Confetti({ pieces = 140, sparks = 26, seed = 20250812 }:
               opacity: p.opacity,
             }}
             animate={{
-              y: 760, // turun ke bawah layar
+              y: 760,
               x: xFrames,
               rotate: p.rotStart + p.turns,
               rotateX: [p.rotX, -p.rotX, p.rotX],
