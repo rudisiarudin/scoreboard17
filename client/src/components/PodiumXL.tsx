@@ -1,7 +1,7 @@
 // src/components/PodiumXL.tsx
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Crown, Trophy, Medal, Users } from "lucide-react"; // + Users
+import { Crown, Trophy, Medal } from "lucide-react";
 import type { Team } from "@/types";
 
 type Ranked = Array<Team & { total: number }>;
@@ -38,8 +38,14 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
         {tiles.map((t) => {
           const c = cfg[t.place as 1 | 2 | 3];
           const d = distances[t.place];
+
+          // ambil nomor kelompok: prioritaskan t.groupNo, fallback dari id 'kelX'
+          const groupNo =
+            (t as any).groupNo ??
+            (typeof t.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
+
+          // hitung jumlah anggota bila ada (dipakai di footer)
           const memberCount = Array.isArray((t as any).members) ? (t as any).members.length : 0;
-          const groupNo = (t as any).groupNo as number | undefined;
 
           return (
             <motion.div
@@ -61,14 +67,16 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
               <div className="flex items-center justify-between relative z-10">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-                  <span className="text-xl md:text-2xl font-extrabold tracking-wide" style={{ color: t.color }}>
-                    {t.name}
-                  </span>
-                  {groupNo ? (
-                    <span className="ml-2 text-[10px] md:text-xs px-2 py-0.5 rounded-full bg-white/70 border border-black/10 text-black/70">
-                      Kelompok {groupNo}
-                    </span>
-                  ) : null}
+                  <div className="leading-tight">
+                    <div className="text-xl md:text-2xl font-extrabold tracking-wide" style={{ color: t.color }}>
+                      {t.name}
+                    </div>
+                    {groupNo ? (
+                      <div className="text-[11px] md:text-xs text-black/60">
+                        kelompok {groupNo}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 {c.icon}
               </div>
@@ -84,10 +92,10 @@ export default function PodiumXL({ ranked }: { ranked: Ranked }) {
                   {t.place === 1 ? "Juara 1" : t.place === 2 ? "Juara 2" : "Juara 3"}
                 </span>
 
+                {/* kalau ada daftar anggota, tampilkan jumlahnya saja */}
                 {memberCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] md:text-xs px-2.5 py-1 rounded-full bg-white/75 border border-black/10 text-black/70">
-                    <Users className="w-3.5 h-3.5" />
-                    {memberCount} member
+                  <span className="text-[11px] md:text-xs px-2.5 py-1 rounded-full bg-white/75 border border-black/10 text-black/70">
+                    {memberCount} anggota
                   </span>
                 ) : (
                   <span className="text-[11px] md:text-xs opacity-70">Peringkat</span>
