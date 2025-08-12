@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { BoardState } from "@/types";
 import { loadState, saveState } from "@/lib/state";
@@ -21,12 +21,34 @@ export default function App() {
   const [lastTop, setLastTop] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // BroadcastChannel untuk sinkronisasi lintas-tab/perangkat (ditambah fallback storage event + polling)
+  const bcRef = useRef<BroadcastChannel | null>(null);
+
   // Realtime sink ke Supabase (row id default "main")
   useSupabaseSync(state, setState, { readOnly: audienceMode, rowId: "main" });
 
-  // persist ke localStorage
+  // inisialisasi BroadcastChannel sekali
+  useEffect(() => {
+    try {
+      bcRef.current = new BroadcastChannel("board-sync");
+    } catch {
+      // abaikan jika browser tidak mendukung (Safari lama, dsb.)
+    }
+    return () => {
+      try {
+        bcRef.current?.close();
+      } catch {}
+    };
+  }, []);
+
+  // persist ke localStorage + siarkan perubahan agar Audience menerima update cepat
   useEffect(() => {
     saveState(state);
+    try {
+      // kirim sinyal ringan saja (versi) — Audience akan memanggil loadState()
+      bcRef.current?.postMessage({ type: "STATE", version: state.version });
+      localStorage.setItem("board:lastVersion", String(state.version));
+    } catch {}
   }, [state]);
 
   // watch hash untuk mode penonton
@@ -79,6 +101,39 @@ export default function App() {
       }
     } catch {}
   }
+
+  /* ================= Audience auto-refresh =================
+     - Terima update via BroadcastChannel → loadState()
+     - Fallback via event 'storage' (lintas-tab origin yg sama)
+     - Fallback polling ringan tiap 2s
+  */
+  useEffect(() => {
+    if (!audienceMode) return;
+
+    const apply = () => setState(loadState());
+
+    // BroadcastChannel
+    const bc = bcRef.current;
+    const onBCMessage = (ev: MessageEvent) => {
+      if ((ev as any)?.data?.type === "STATE") apply();
+    };
+    if (bc) bc.onmessage = onBCMessage;
+
+    // storage event (lintas-tab)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "state" || e.key === "board:lastVersion") apply();
+    };
+    window.addEventListener("storage", onStorage);
+
+    // polling fallback (jaga-jaga jika keduanya tidak jalan)
+    const id = window.setInterval(apply, 2000);
+
+    return () => {
+      if (bc) bc.onmessage = null as any;
+      window.removeEventListener("storage", onStorage);
+      clearInterval(id);
+    };
+  }, [audienceMode]);
 
   return (
     <div className="min-h-screen w-full relative">
