@@ -1,48 +1,27 @@
-import type { BoardState, Event, Team } from "@/types";
+import type { BoardState } from "@/types";
+import { initialState } from "@/lib/seed";
 
-const STORAGE_KEY = "scoreboard6.multilomba.ui.v8.poster";
-const SCHEMA = 2;
-
-const DEFAULT_TEAM_IDS = ["team-1","team-2","team-3","team-4","team-5","team-6"];
-
-export function createDefaultTeams(): Team[] {
-  const names = ["Kelompok 1","Kelompok 2","Kelompok 3","Kelompok 4","Kelompok 5","Kelompok 6"];
-  const reds  = ["#2a05faff","#00c020ff","#ee0d0dff","#f97316","#ff647bff","#b30095ff"];
-  return names.map((n,i)=>({ id: DEFAULT_TEAM_IDS[i], name:n, color: reds[i%reds.length] }));
-}
-
-export function createDefaultEvents(): Event[] {
-  return [
-    { id:"evt-yelyel",  name:"Penampilan Yel-Yel", weight:20 },
-    { id:"evt-gesit",   name:"Lomba - The Gesit Way of Thinking", weight:20 },
-    { id:"evt-lagu",    name:"Lomba Tebak Lagu Nasional", weight:20 },
-    { id:"evt-estafet", name:"Lomba Estafet Balon", weight:20 },
-    { id:"evt-costume", name:"Best Costume", weight:10 },
-    { id:"evt-potluck", name:"Potluck Merah Putih – Cita Rasa Nusantara", weight:10 },
-  ];
-}
-
-export function blankScores(events: Event[], teams: Team[]) {
-  const s: Record<string, Record<string, number>> = {};
-  for (const e of events) { s[e.id] = {}; for (const t of teams) s[e.id][t.id] = 0; }
-  return s;
-}
-
-function fresh(): BoardState {
-  const teams = createDefaultTeams(); const events = createDefaultEvents();
-  return { title:"Skor 17 Agustusan – Multi Lomba (6 Kelompok)", version:1, teams, events, scores: blankScores(events,teams), schema: SCHEMA };
-}
+const KEY = "state";
 
 export function loadState(): BoardState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fresh();
-    const parsed = JSON.parse(raw);
-    if (parsed?.schema !== SCHEMA) return { ...fresh(), ...parsed, schema: SCHEMA };
-    return parsed as BoardState;
-  } catch { return fresh(); }
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return initialState;
+    const parsed = JSON.parse(raw) as BoardState;
+    // fallback ringan jika struktur berubah
+    return {
+      version: parsed.version ?? 1,
+      teams: parsed.teams ?? initialState.teams,
+      events: parsed.events ?? initialState.events,
+      scores: parsed.scores ?? {},
+    };
+  } catch {
+    return initialState;
+  }
 }
 
-export function saveState(s: BoardState) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...s, schema: SCHEMA })); } catch {}
+export function saveState(next: BoardState) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {}
 }
