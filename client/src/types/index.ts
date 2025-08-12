@@ -1,10 +1,8 @@
-// re-export semua tipe
-export * from "./state";
-
-// enum untuk status koneksi (dipakai di runtime)
-export enum WSStatus {
-  CONNECTING = "connecting",
-  OPEN = "open",
-  CLOSED = "closed",
-  ERROR = "error",
-}
+// src/types/index.ts
+export type {
+  Team,
+  Event,
+  Scores,
+  BoardState,
+  WSStatus as WSStatusT, // tipe alias (bila mau dipakai sebagai type)
+} from "./state";
