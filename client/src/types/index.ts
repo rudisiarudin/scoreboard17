@@ -4,5 +4,5 @@ export type {
   Event,
   Scores,
   BoardState,
-  WSStatus as WSStatusT, // tipe alias (bila mau dipakai sebagai type)
+  WSStatus as WSStatusT,
 } from "./state";
