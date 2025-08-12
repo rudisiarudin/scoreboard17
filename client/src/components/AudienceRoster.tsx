@@ -6,37 +6,50 @@ export default function AudienceRoster({ teams }: { teams: Team[] }) {
       {teams.map((t) => {
         const groupNo =
           (t as any).groupNo ??
-          (typeof t.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
+          (typeof t.id === "string"
+            ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined
+            : undefined);
+
+        const members = t.members?.length ? t.members : [];
 
         return (
           <div
             key={t.id}
-            className="w-[320px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5"
+            className="w-[360px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-6"
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-              <div className="leading-tight">
-                <div className="font-semibold" style={{ color: t.color }}>
-                  {t.name}
-                </div>
-                {groupNo ? (
-                  <div className="text-[11px] text-black/60">Kelompok {groupNo}</div>
-                ) : null}
+            {/* Judul & subjudul tengah */}
+            <div className="text-center">
+              <div className="font-extrabold text-red-700 leading-tight"
+                   style={{ fontSize: "clamp(18px, 2.1vw, 22px)" }}>
+                {t.name}
               </div>
+              {groupNo ? (
+                <div className="mt-0.5 text-neutral-800"
+                     style={{ fontSize: "clamp(13px, 1.6vw, 15px)" }}>
+                  Kelompok {groupNo}
+                </div>
+              ) : null}
             </div>
 
-            {t.members?.length ? (
-              <ul className="text-sm leading-tight space-y-1 whitespace-normal break-words">
-                {t.members.map((m, i) => (
-                  <li key={i} className="flex items-start gap-1">
-                    <span className="mt-[6px] w-1.5 h-1.5 rounded-full bg-black/20" />
-                    <span>{m}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-xs italic text-black/50">Belum ada anggota</div>
-            )}
+            {/* Daftar anggota: 2 kolom, agak besar, bukan bold */}
+            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-1">
+              {members.length ? (
+                members.map((m, i) => (
+                  <div
+                    key={i}
+                    className="text-neutral-900 whitespace-normal break-words"
+                    style={{ fontSize: "clamp(14px, 1.8vw, 17px)" }}
+                  >
+                    {m}
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-2 italic text-black/50"
+                     style={{ fontSize: "clamp(14px, 1.6vw, 16px)" }}>
+                  Belum ada anggota
+                </div>
+              )}
+            </div>
           </div>
         );
       })}
