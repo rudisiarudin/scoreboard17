@@ -217,7 +217,7 @@ export default function App() {
             )}
           </div>
 
-          {showConfetti && <Confetti pieces={180} sparks={36} />}
+{/*           {showConfetti && <Confetti pieces={180} sparks={36} />} */}
 
           {/* Floating controls */}
           <div className="fixed right-4 bottom-4 z-40">
