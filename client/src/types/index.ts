@@ -1,12 +1,10 @@
-export type Team = { id: string; name: string; color: string };
-export type Event = { id: string; name: string; weight: number }; // weight = skor maksimum
-export type Scores = Record<string, Record<string, number>>;      // scores[eventId][teamId]
-export type BoardState = {
-  title: string;
-  version: number;
-  teams: Team[];
-  events: Event[];
-  scores: Scores;
-  schema?: number;
-};
-export type WSStatus = "offline" | "connecting" | "online";
+// re-export semua tipe
+export * from "./state";
+
+// enum untuk status koneksi (dipakai di runtime)
+export enum WSStatus {
+  CONNECTING = "connecting",
+  OPEN = "open",
+  CLOSED = "closed",
+  ERROR = "error",
+}
