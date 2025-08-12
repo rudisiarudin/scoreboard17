@@ -194,7 +194,7 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    
+                    <div className="text-sm md:text-base text-neutral-800 font-semibold">Klasemen Keseluruhan</div>
                   )}
                 </div>
               </div>
@@ -383,7 +383,6 @@ function HeaderPoster() {
     </div>
   );
 }
-
 
 function HeroBackground() {
   return (
