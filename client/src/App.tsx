@@ -101,6 +101,12 @@ export default function App() {
     }
   }
 
+  // sinkronkan tab ketika currentEventId datang dari realtime (audience & operator)
+  useEffect(() => {
+    const target = state.currentEventId ?? "summary";
+    setActiveTab(target);
+  }, [state.currentEventId]);
+
   async function toggleFullscreen() {
     try {
       if (!document.fullscreenElement) {
@@ -444,8 +450,14 @@ function TabButton({
 function HeaderPoster() {
   return (
     <div className="relative w-full mt-6">
-      <div className="flex items-center justify-between px-8">
-        <img src="/logo-company.png" alt="Logo Perusahaan" className="h-16 md:h-20 w-auto drop-shadow" />
+      {/* Grid 3 kolom dengan sisi kiri/kanan lebar tetap agar judul benar-benar center */}
+      <div className="grid grid-cols-[96px_1fr_96px] md:grid-cols-[112px_1fr_112px] items-center px-8">
+        {/* Logo kiri */}
+        <div className="w-[96px] md:w-[112px] justify-self-start">
+          <img src="/logo-company.png" alt="Logo Perusahaan" className="h-16 md:h-20 w-auto drop-shadow mx-auto" />
+        </div>
+
+        {/* Tengah (judul center) */}
         <div className="text-center">
           <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow">
             <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">
@@ -463,7 +475,11 @@ function HeaderPoster() {
             Mari kita bergerak, berinovasi, dan berkolaborasi untuk mencapai tujuan bersama.
           </p>
         </div>
-        <img src="/logo-80.png" alt="Logo 80 Tahun RI" className="h-16 md:h-20 w-auto drop-shadow" />
+
+        {/* Logo kanan */}
+        <div className="w-[96px] md:w-[112px] justify-self-end">
+          <img src="/logo-80.png" alt="Logo 80 Tahun RI" className="h-16 md:h-20 w-auto drop-shadow mx-auto" />
+        </div>
       </div>
     </div>
   );
