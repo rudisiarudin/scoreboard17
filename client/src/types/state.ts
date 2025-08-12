@@ -21,7 +21,9 @@ export type Scores = Record<string, Record<string, number>>;
 export type BoardState = {
   version: number;
   title?: string;
+  currentEventId?: string | null; // 👈 tambah ini
   teams: Team[];
   events: Event[];
   scores: Scores;
 };
+
