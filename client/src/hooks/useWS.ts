@@ -1,7 +1,7 @@
 // src/hooks/useWS.ts
 import { useEffect, useRef, useState } from "react";
 import type { BoardState } from "@/types";
-import { WSStatus } from "@/types"; // <- nilai enum (bukan `import type`)
+import { WSStatus } from "@/types/state";
 import { v4 as uuidv4 } from "uuid";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
