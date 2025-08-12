@@ -194,7 +194,7 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <div className="text-sm md:text-base text-neutral-800 font-semibold">Klasemen Keseluruhan</div>
+                    
                   )}
                 </div>
               </div>
@@ -348,7 +348,7 @@ function HeaderPoster() {
           <img
             src="/logo-company.png"
             alt="Logo Perusahaan"
-            className="h-16 md:h-20 max-w-full object-contain drop-shadow mx-auto"
+            className="h-16 md:h-20 max-w-full object-contain mx-auto"
           />
         </div>
 
@@ -376,7 +376,7 @@ function HeaderPoster() {
           <img
             src="/logo-80.png"
             alt="Logo 80 Tahun RI"
-            className="h-16 md:h-20 max-w-full object-contain drop-shadow mx-auto"
+            className="h-16 md:h-20 max-w-full object-contain mx-auto"
           />
         </div>
       </div>
