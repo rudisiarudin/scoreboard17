@@ -53,10 +53,13 @@ export const initialState: BoardState = {
     },
   ],
   // Contoh event; silakan ganti sesuai kebutuhanmu
-  events: [
-    { id: "ev1", name: "Lomba 1", weight: 100 },
-    { id: "ev2", name: "Lomba 2", weight: 100 },
-    { id: "ev3", name: "Lomba 3", weight: 100 },
-  ],
+events: [
+  { id: "ev-yelyel", name: "Penampilan Yel-Yel", weight: 100 },
+  { id: "ev-gesit-think", name: "Lomba - The Gesit Way of Thinking", weight: 100 },
+  { id: "ev-tebak-lagu", name: "Lomba Tebak Lagu Nasional", weight: 100 },
+  { id: "ev-estafet-balon", name: "Lomba Estafet Balon", weight: 100 },
+  { id: "ev-best-costume", name: "Best Costume", weight: 100 },
+  { id: "ev-potluck", name: "Potluck Merah Putih – “Cita Rasa Nusantara”", weight: 100 },
+],
   scores: {},
 };
