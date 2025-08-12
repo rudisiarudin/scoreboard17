@@ -1,27 +1,34 @@
-import type { Event, Scores, Team } from "@/types";
-import ScoreCell from "./ScoreCell";
+import type { Team, Event, Scores } from "@/types";
 
-export default function TeamCard({ team, events, scores, rankLabel }: {
-  team: Team & { total: number }, events: Event[], scores: Scores, rankLabel: string
-}) {
+export default function TeamCard({ team, events, scores, rankLabel }: { team: Team; events: Event[]; scores: Scores; rankLabel?: string }) {
+  const total = events.reduce((sum, ev) => sum + (scores[ev.id]?.[team.id] ?? 0), 0);
   return (
-    <div className="rounded-2xl border border-red-200 bg-white/90 shadow p-5">
-      <div className="flex items-center justify-between mb-3">
+    <div className="rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5 w-full">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: team.color }} />
           <span className="font-semibold" style={{ color: team.color }}>{team.name}</span>
         </div>
-        <span className="text-sm px-2 py-0.5 rounded-lg border border-red-200 bg-red-50">{rankLabel}</span>
+        {rankLabel ? (
+          <span className="text-xs px-2 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">{rankLabel}</span>
+        ) : null}
       </div>
-      <div className="text-5xl font-extrabold tabular-nums mb-3" style={{ color: team.color }}>{team.total}</div>
-      <ul className="text-sm space-y-1">
-        {events.map(e=>(
-          <li key={e.id} className="flex items-center justify-between border-b border-red-100 last:border-none py-1">
-            <span className="truncate pr-3">{e.name} <span className="opacity-60">(maks {e.weight})</span></span>
-            <ScoreCell value={Math.min(scores[e.id]?.[team.id] ?? 0, e.weight)} />
-          </li>
-        ))}
-      </ul>
+
+      <div className="text-4xl font-extrabold text-red-700">{total}</div>
+
+      {team.members?.length ? (
+        <div className="mt-3">
+          <div className="uppercase text-[10px] tracking-wide text-black/50 font-semibold mb-1">Anggota</div>
+          <ul className="text-sm leading-tight space-y-1 max-h-28 overflow-y-auto pr-1">
+            {team.members.map((m, i) => (
+              <li key={i} className="flex items-start gap-1">
+                <span className="mt-[6px] w-1.5 h-1.5 rounded-full bg-black/20" />
+                <span className="truncate">{m}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
