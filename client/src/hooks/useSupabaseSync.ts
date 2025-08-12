@@ -1,16 +1,19 @@
-// client/src/hooks/useSupabaseSync.ts
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { BoardState } from "@/types";
 
+type Options = { readOnly?: boolean; rowId?: string };
+
 export function useSupabaseSync(
   state: BoardState,
   setState: (s: BoardState) => void,
-  rowId = "main"
+  options: Options = {}
 ) {
+  const rowId = options.rowId ?? "main";
+  const readOnly = !!options.readOnly;
   const applyingRemote = useRef(false);
 
-  // Load awal & seed
+  // Load awal (+ seed hanya jika !readOnly)
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase
@@ -23,14 +26,18 @@ export function useSupabaseSync(
         console.warn("Supabase load error:", error);
         return;
       }
+
       if (!data) {
-        await supabase.from("scoreboard").insert({
-          id: rowId,
-          state,
-          version: state.version ?? 1,
-        });
+        if (!readOnly) {
+          await supabase.from("scoreboard").insert({
+            id: rowId,
+            state,
+            version: state.version ?? 1,
+          });
+        }
         return;
       }
+
       const remote = data.state as BoardState | undefined;
       const rv = (data.version as number) ?? 0;
       if (remote && rv > (state.version ?? 0)) {
@@ -40,12 +47,12 @@ export function useSupabaseSync(
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rowId, readOnly]);
 
-  // Subscribe realtime
+  // Subscribe realtime (selalu aktif, read/write sama)
   useEffect(() => {
     const channel = supabase
-      .channel("scoreboard:main")
+      .channel(`scoreboard:${rowId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "scoreboard", filter: `id=eq.${rowId}` },
@@ -70,11 +77,11 @@ export function useSupabaseSync(
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.version]);
+  }, [rowId, state.version]);
 
-  // Push setiap perubahan lokal (debounce kecil)
+  // Push ke Supabase saat state berubah (SKIP kalau readOnly)
   useEffect(() => {
-    if (applyingRemote.current) return;
+    if (readOnly || applyingRemote.current) return;
     const t = setTimeout(async () => {
       const { error } = await supabase
         .from("scoreboard")
@@ -84,8 +91,10 @@ export function useSupabaseSync(
           updated_at: new Date().toISOString(),
         })
         .eq("id", rowId);
+
       if (error) console.warn("Supabase push error:", error);
     }, 120);
+
     return () => clearTimeout(t);
-  }, [state, rowId]);
+  }, [state, rowId, readOnly]);
 }
