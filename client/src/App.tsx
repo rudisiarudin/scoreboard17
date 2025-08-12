@@ -188,18 +188,23 @@ export default function App() {
                 <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow border border-red-200">
                   {ev ? (
                     <div className="text-center">
-                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">Sedang Dipertandingkan</div>
+                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">
+                        Sedang Dipertandingkan
+                      </div>
                       <div className="text-sm md:text-base text-neutral-800 font-semibold">
                         {ev.name} <span className="text-xs text-red-700">· Maks {ev.weight}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="text-sm md:text-base text-neutral-800 font-semibold">Klasemen Keseluruhan</div>
+                    <div className="text-sm md:text-base text-neutral-800 font-semibold">
+                      Klasemen Keseluruhan
+                    </div>
                   )}
                 </div>
               </div>
             );
           })()}
+
 
           <div className="mt-8 space-y-8">
             {showRosterOnly ? (
