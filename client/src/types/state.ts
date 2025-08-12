@@ -7,7 +7,14 @@ export const WSStatus = {
   ERROR: "error",
 } as const;
 
-export type Team = { id: string; name: string; color: string; members?: string[] };
+export type Team = {
+  id: string;
+  name: string;
+  color: string;
+  members?: string[];
+  groupNo?: number; // 👈 nomor kelompok
+};
+
 export type Event = { id: string; name: string; weight: number };
 export type Scores = Record<string, Record<string, number>>;
 
