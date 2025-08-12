@@ -1,3 +1,4 @@
+// src/App.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { BoardState } from "@/types";
@@ -183,30 +184,54 @@ export default function App() {
                 <div key={e.id} className="max-w-[120rem] mx-auto">
                   <div className="font-semibold text-red-800 text-center mb-3">{e.name} <span className="text-xs text-red-700">· Maks {e.weight}</span></div>
                   <div className="grid justify-items-center gap-6 mx-auto grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-                    {state.teams.map((t) => (
-                      <div key={t.id} className="w-[320px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-                            <span className="font-semibold" style={{ color: t.color }}>{t.name}</span>
+                    {state.teams.map((t) => {
+                      // nomor kelompok: prioritaskan t.groupNo, fallback dari id 'kelX'
+                      const groupNo =
+                        (t as any).groupNo ??
+                        (typeof t.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
+
+                      return (
+                        <div key={t.id} className="w-[320px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5">
+                          {/* header: NAMA + KETERANGAN 'Kelompok X' */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                              <div className="leading-tight">
+                                <div className="font-semibold" style={{ color: t.color }}>
+                                  {t.name}
+                                </div>
+                                {groupNo ? (
+                                  <div className="text-[11px] text-black/60">Kelompok {groupNo}</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* input skor */}
+                          <div className="flex justify-center">
+                            <input
+                              type="number" inputMode="numeric" min={0} max={e.weight} step={1}
+                              value={state.scores[e.id]?.[t.id] ?? 0}
+                              onChange={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
+                              onBlur={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
+                              onKeyDown={(ev) => { const ban = ["e","E","+","-"]; if (ban.includes(ev.key)) ev.preventDefault(); }}
+                              placeholder="0"
+                              className="w-20 md:w-24 h-11 md:h-12 text-lg md:text-xl text-center bg-white/95 border border-red-300 rounded-xl shadow-inner outline-none transition focus:ring-2 focus:ring-red-500/40 focus:border-red-500 hover:border-red-400"
+                            />
                           </div>
                         </div>
-                        <div className="flex justify-center">
-                          <input
-                            type="number" inputMode="numeric" min={0} max={e.weight} step={1}
-                            value={state.scores[e.id]?.[t.id] ?? 0}
-                            onChange={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
-                            onBlur={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
-                            onKeyDown={(ev) => { const ban = ["e","E","+","-"]; if (ban.includes(ev.key)) ev.preventDefault(); }}
-                            placeholder="0"
-                            className="w-20 md:w-24 h-11 md:h-12 text-lg md:text-xl text-center bg-white/95 border border-red-300 rounded-xl shadow-inner outline-none transition focus:ring-2 focus:ring-red-500/40 focus:border-red-500 hover:border-red-400"
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <div className="mt-4 flex justify-center">
-                    <button onClick={() => bump((s) => ({ ...s, scores: { ...s.scores, [e.id]: Object.fromEntries(s.teams.map((t) => [t.id, 0])) } }))} className="px-4 py-2 rounded-2xl border border-red-300 bg-white text-red-700 hover:bg-red-50 transition">Reset Lomba</button>
+                    <button
+                      onClick={() =>
+                        bump((s) => ({ ...s, scores: { ...s.scores, [e.id]: Object.fromEntries(s.teams.map((t) => [t.id, 0])) } }))
+                      }
+                      className="px-4 py-2 rounded-2xl border border-red-300 bg-white text-red-700 hover:bg-red-50 transition"
+                    >
+                      Reset Lomba
+                    </button>
                   </div>
                 </div>
               ))}
