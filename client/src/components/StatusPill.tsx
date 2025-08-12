@@ -1,5 +1,5 @@
 // src/components/StatusPill.tsx
-import { WSStatus } from "@/types";
+import { WSStatus } from "@/types/state";
 
 export default function StatusPill({ connected }: { connected: WSStatus }) {
   const map = {
