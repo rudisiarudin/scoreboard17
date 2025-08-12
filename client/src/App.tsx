@@ -341,29 +341,49 @@ function TabButton({ active, children, onClick }: { active: boolean; children: R
 function HeaderPoster() {
   return (
     <div className="relative w-full mt-6">
-      <div className="grid grid-cols-[96px_1fr_96px] md:grid-cols-[112px_1fr_112px] items-center px-8">
-        <div className="w-[96px] md:w-[112px] justify-self-start">
-          <img src="/logo-company.png" alt="Logo Perusahaan" className="h-16 md:h-20 w-auto drop-shadow mx-auto" />
+      {/* sisi kiri/kanan dibuat lebih lega dan simetris */}
+      <div className="grid grid-cols-[120px_1fr_120px] md:grid-cols-[140px_1fr_140px] items-center px-8">
+        {/* Logo kiri */}
+        <div className="w-[120px] md:w-[140px] justify-self-start">
+          <img
+            src="/logo-company.png"
+            alt="Logo Perusahaan"
+            className="h-16 md:h-20 max-w-full object-contain drop-shadow mx-auto"
+          />
         </div>
+
+        {/* Tengah */}
         <div className="text-center">
           <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow">
-            <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">DIRGAHAYU REPUBLIK INDONESIA</div>
+            <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">
+              DIRGAHAYU REPUBLIK INDONESIA
+            </div>
             <div className="text-neutral-700 text-[11px] md:text-xs mt-0.5">17 AGUSTUS 2025</div>
           </div>
-          <h1 className="mt-3 font-extrabold text-red-700 drop-shadow-md leading-tight" style={{ fontSize: "clamp(2rem, 2.8vw, 3.2rem)" }}>
+          <h1
+            className="mt-3 font-extrabold text-red-700 drop-shadow-md leading-tight"
+            style={{ fontSize: "clamp(2rem,2.8vw,3.2rem)" }}
+          >
             BERSATU KITA GESIT
           </h1>
           <p className="mt-2 text-neutral-800 text-[13px] md:text-sm max-w-xl mx-auto backdrop-blur px-3 py-1.5">
             Mari kita bergerak, berinovasi, dan berkolaborasi untuk mencapai tujuan bersama.
           </p>
         </div>
-        <div className="w-[96px] md:w-[112px] justify-self-end">
-          <img src="/logo-80.png" alt="Logo 80 Tahun RI" className="h-16 md:h-20 w-auto drop-shadow mx-auto" />
+
+        {/* Logo 80 kanan */}
+        <div className="w-[120px] md:w-[140px] justify-self-end">
+          <img
+            src="/logo-80.png"
+            alt="Logo 80 Tahun RI"
+            className="h-16 md:h-20 max-w-full object-contain drop-shadow mx-auto"
+          />
         </div>
       </div>
     </div>
   );
 }
+
 
 function HeroBackground() {
   return (
