@@ -22,7 +22,7 @@ export default function App() {
   const [showConfetti, setShowConfetti] = useState(false);
 
   // Realtime sink ke Supabase (row id default "main")
-  useSupabaseSync(state, setState);
+  useSupabaseSync(state, setState, { readOnly: audienceMode, rowId: "main" });
 
   // persist ke localStorage
   useEffect(() => {
