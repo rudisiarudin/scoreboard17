@@ -4,11 +4,13 @@ import { motion } from "framer-motion";
 import type { BoardState } from "@/types";
 import { loadState, saveState } from "@/lib/state";
 import { computeTotals } from "@/lib/totals";
-import { useWS } from "@/hooks/useWS";
 import TeamCard from "@/components/TeamCard";
 import PodiumXL from "@/components/PodiumXL";
 import AudienceMatrix from "@/components/AudienceMatrix";
 import Confetti from "@/components/Confetti";
+
+// ⬇️ Realtime via Supabase (ganti WebSocket)
+import { useSupabaseSync } from "@/hooks/useSupabaseSync";
 
 /* ============================== App ============================== */
 export default function App() {
@@ -19,16 +21,15 @@ export default function App() {
   const [lastTop, setLastTop] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // WS (broadcast only; no realtime pill)
-  const { broadcast } = useWS((incoming) => setState(incoming), state);
+  // Realtime sink ke Supabase (row id default "main")
+  useSupabaseSync(state, setState);
 
-  // persist + sync
+  // persist ke localStorage
   useEffect(() => {
     saveState(state);
-    broadcast(state);
-  }, [state, broadcast]);
+  }, [state]);
 
-  // watch hash for audience mode
+  // watch hash untuk mode penonton
   useEffect(() => {
     const onHash = () => setAudienceMode(location.hash === "#audience");
     window.addEventListener("hashchange", onHash);
@@ -45,7 +46,7 @@ export default function App() {
     [state.teams, totals],
   );
 
-  // lightweight confetti when leader changes
+  // confetti ringan saat pimpinan berubah
   useEffect(() => {
     if (ranked[0]?.id && ranked[0]?.id !== lastTop) {
       setLastTop(ranked[0].id);
@@ -319,7 +320,6 @@ function HeroBackground() {
           backgroundSize: "cover",
         }}
       />
-      {/* overlay bisa ditambah kalau perlu */}
       <div className="pointer-events-none absolute inset-0 -z-10" />
     </>
   );
