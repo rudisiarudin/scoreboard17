@@ -1,5 +1,5 @@
-import { WSStatus } from "@/types/state";             // NILAI runtime
-import type { WSStatus as WSStatusT } from "@/types"; // TIPE dari barrel
+import { WSStatus } from "@/types/state";             // NILAI
+import type { WSStatus as WSStatusT } from "@/types";  // TIPE
 
 export default function StatusPill({ connected }: { connected: WSStatusT }) {
   const map = {
