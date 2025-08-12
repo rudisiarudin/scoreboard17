@@ -1,4 +1,4 @@
-// src/types.ts
+// src/types/state.ts
 export enum WSStatus {
   CONNECTING = "connecting",
   OPEN = "open",
@@ -10,20 +10,20 @@ export type Team = {
   id: string;
   name: string;
   color: string;
-  members?: string[]; // daftar anggota
+  members?: string[];
 };
 
 export type Event = {
   id: string;
   name: string;
-  weight: number; // skor maksimum
+  weight: number;
 };
 
-export type Scores = Record<string, Record<string, number>>; // eventId -> teamId -> nilai
+export type Scores = Record<string, Record<string, number>>;
 
 export type BoardState = {
   version: number;
-  title?: string; // << tambahkan ini agar object literal yang punya `title` valid
+  title?: string; // <<< tambahkan properti optional ini
   teams: Team[];
   events: Event[];
   scores: Scores;
