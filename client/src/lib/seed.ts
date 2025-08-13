@@ -54,12 +54,11 @@ export const initialState: BoardState = {
   ],
   // Contoh event; silakan ganti sesuai kebutuhanmu
 events: [
-  { id: "ev-yelyel", name: "Penampilan Yel-Yel", weight: 100 },
-  { id: "ev-gesit-think", name: "Lomba - The Gesit Way of Thinking", weight: 100 },
-  { id: "ev-tebak-lagu", name: "Lomba Tebak Lagu Nasional", weight: 100 },
-  { id: "ev-estafet-balon", name: "Lomba Estafet Balon", weight: 100 },
-  { id: "ev-best-costume", name: "Best Costume", weight: 100 },
-  { id: "ev-potluck", name: "Potluck Merah Putih", weight: 100 },
+  { id: "ev-yelyel", name: "Penampilan Yel-Yel", weight: 20 },
+  { id: "ev-gesit-think", name: "Lomba - The Gesit Way of Thinking", weight: 30 },
+  { id: "ev-tebak-lagu", name: "Lomba Tebak Lagu Nasional", weight: 30 },
+  { id: "ev-estafet-balon", name: "Lomba Estafet Balon", weight: 20 },
+  { id: "ev-potluck", name: "Potluck Merah Putih", weight: 10 },
 ],
   scores: {},
 };
