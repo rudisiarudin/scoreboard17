@@ -1,8 +1,9 @@
 // src/types/index.ts
 export type {
+  WSStatus,
   Team,
   Event,
   Scores,
+  WheelState,
   BoardState,
-  WSStatus as WSStatusT,
 } from "./state";
