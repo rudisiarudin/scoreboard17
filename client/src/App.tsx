@@ -14,19 +14,16 @@ import { supabase } from "@/lib/supabase";
 
 const ROW_ID = "main";
 
-/* ===== helper RNG & shuffle deterministik untuk Spin Wheel ===== */
-function makeRand(seed: number) {
+/* ======================= Utils: seeded shuffle ======================= */
+function shuffleBySeed(ids: string[], seed: number) {
   let s = seed >>> 0;
-  return () => ((s = (1664525 * s + 1013904223) >>> 0) / 0xffffffff);
-}
-function shuffleDeterministic<T>(arr: T[], seed: number): T[] {
-  const a = [...arr];
-  const rnd = makeRand(seed);
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  const rand = () => ((s = (1664525 * s + 1013904223) >>> 0) / 0xffffffff);
+  const arr = [...ids];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return a;
+  return arr;
 }
 
 export default function App() {
@@ -37,15 +34,12 @@ export default function App() {
   const [lastTop, setLastTop] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  // overlay Spin Wheel
-  const [wheelOpen, setWheelOpen] = useState(false);
-
   const bcRef = useRef<BroadcastChannel | null>(null);
   const lastRemoteVersionRef = useRef<number | null>(null);
   const stateVersionRef = useRef<number>(state.version);
   useEffect(() => { stateVersionRef.current = state.version; }, [state.version]);
 
-  // persist + broadcast (lintas-tab)
+  /* ================= Persist + Broadcast (local) ================= */
   useEffect(() => {
     saveState(state);
     try {
@@ -59,23 +53,24 @@ export default function App() {
     return () => { try { bcRef.current?.close(); } catch {} };
   }, []);
 
-  // hash → audience mode
+  /* ================== Mode Penonton dari hash ================== */
   useEffect(() => {
     const onHash = () => setAudienceMode(location.hash === "#audience");
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // totals & ranking
+  /* ======================= Totals & Ranking ======================= */
   const totals = useMemo(() => computeTotals(state.teams, state.events, state.scores), [state]);
   const ranked = useMemo(
-    () => [...state.teams]
-      .map((t) => ({ ...t, total: totals[t.id] || 0 }))
-      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+    () =>
+      [...state.teams]
+        .map((t) => ({ ...t, total: totals[t.id] || 0 }))
+        .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
     [state.teams, totals]
   );
 
-  // confetti saat pemimpin berubah
+  /* ================= Confetti saat pemimpin berubah ================= */
   useEffect(() => {
     if (ranked[0]?.id && ranked[0]?.id !== lastTop) {
       setLastTop(ranked[0].id);
@@ -85,7 +80,7 @@ export default function App() {
     }
   }, [ranked, lastTop]);
 
-  /* ================= Helpers ================= */
+  /* ============================ Helpers ============================ */
   function bump(updater: (s: BoardState) => BoardState) {
     setState((prev) => ({ ...updater(prev), version: prev.version + 1 }));
   }
@@ -99,7 +94,7 @@ export default function App() {
     });
   }
 
-  // pilih tab; 'summary' & 'roster' tidak mengubah currentEventId (tetap null)
+  // pilih tab; 'summary' & 'roster' tidak mengubah currentEventId
   function setActive(tab: string) {
     setActiveTab(tab);
     if (!audienceMode) {
@@ -126,7 +121,29 @@ export default function App() {
   async function enterAudience() { try { await pushNow(); } catch {} location.hash = "#audience"; }
   function exitAudience() { location.hash = ""; }
 
-  /* ============== Supabase Realtime ============== */
+  /* ===================== Spin Wheel Mutations ===================== */
+  function openWheel(seed?: number) {
+    const realSeed = (seed ?? ((Math.random() * 2 ** 31) ^ Date.now())) >>> 0;
+    bump((s) => {
+      const ids = shuffleBySeed(s.teams.map((t) => t.id), realSeed);
+      return { ...s, wheel: { seed: realSeed, queueIds: ids, activeIndex: 0, isOpen: true } };
+    });
+  }
+  function advanceWheel() {
+    bump((s) => {
+      if (!s.wheel) return s;
+      const next = Math.min(s.wheel.activeIndex + 1, s.wheel.queueIds.length - 1);
+      return { ...s, wheel: { ...s.wheel, activeIndex: next, isOpen: true } };
+    });
+  }
+  function closeWheel() {
+    bump((s) => (s.wheel ? { ...s, wheel: { ...s.wheel, isOpen: false } } : s));
+  }
+  function resetWheel() {
+    bump((s) => ({ ...s, wheel: null }));
+  }
+
+  /* ========================= Supabase Realtime ========================= */
   useEffect(() => {
     let alive = true;
     const apply = (next: BoardState) => {
@@ -192,50 +209,7 @@ export default function App() {
   const activeEvent = state.currentEventId ? state.events.find((e) => e.id === state.currentEventId) : null;
   const showRosterOnly = activeEvent ? !eventHasAnyScore(activeEvent.id) : !globalHasAnyScore;
 
-  /* ====== Spin Wheel handlers ====== */
-  // audience otomatis buka overlay kalau wheel aktif
-  useEffect(() => {
-    if (audienceMode && state.wheel?.startedAt) setWheelOpen(true);
-  }, [audienceMode, state.wheel?.startedAt]);
-
-  function wheelGenerate(seed: number) {
-    bump((s) => {
-      const ids = s.teams.map((t) => t.id);
-      const queue = shuffleDeterministic(ids, seed);
-      return {
-        ...s,
-        wheel: {
-          mode: "yelyel",
-          seed,
-          startedAt: new Date().toISOString(),
-          queueIds: queue,
-          activeIndex: 0,
-        },
-      };
-    });
-    setWheelOpen(true);
-  }
-
-  function wheelAdvance() {
-    bump((s) => {
-      if (!s.wheel) return s;
-      const next = Math.min(s.wheel.activeIndex + 1, s.wheel.queueIds.length - 1);
-      return { ...s, wheel: { ...s.wheel, activeIndex: next } };
-    });
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 900);
-  }
-
-  function wheelReset() {
-    bump((s) => ({ ...s, wheel: null }));
-    setWheelOpen(false);
-  }
-
-  function wheelClose() {
-    setWheelOpen(false);
-  }
-
-  /* ===================== UI ===================== */
+  /* =============================== UI =============================== */
   return (
     <div className="min-h-screen w-full relative">
       <HeroBackground />
@@ -246,29 +220,20 @@ export default function App() {
           <HeaderPoster />
 
           {/* Banner judul */}
-          {(() => {
-            const ev = activeEvent;
-            return (
-              <div className="mt-4">
-                <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow border border-red-200">
-                  {ev ? (
-                    <div className="text-center">
-                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">
-                        Sedang Dipertandingkan
-                      </div>
-                      <div className="text-sm md:text-base text-neutral-800 font-semibold">
-                        {ev.name} <span className="text-xs text-red-700">· Maks {ev.weight}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm md:text-base text-neutral-800 font-semibold">
-                      Klasemen Keseluruhan
-                    </div>
-                  )}
+          <div className="mt-4">
+            <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow border border-red-200">
+              {activeEvent ? (
+                <div className="text-center">
+                  <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">Sedang Dipertandingkan</div>
+                  <div className="text-sm md:text-base text-neutral-800 font-semibold">
+                    {activeEvent.name} <span className="text-xs text-red-700">· Maks {activeEvent.weight}</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              ) : (
+                <div className="text-sm md:text-base text-neutral-800 font-semibold">Klasemen Keseluruhan</div>
+              )}
+            </div>
+          </div>
 
           <div className="mt-8 space-y-8">
             {showRosterOnly ? (
@@ -281,7 +246,7 @@ export default function App() {
             )}
           </div>
 
-          {showConfetti && <Confetti pieces={180} sparks={36} />}
+          {showConfetti && <Confetti pieces={180} />}
 
           {/* Floating controls */}
           <div className="fixed right-4 bottom-4 z-40">
@@ -300,18 +265,8 @@ export default function App() {
         <div className="relative mx-auto w-full max-w-[120rem] px-4 lg:px-8 py-6">
           <HeaderPoster />
 
-          {/* tombol Spin Wheel */}
-          <div className="mt-3 flex justify-center">
-            <button
-              onClick={() => setWheelOpen(true)}
-              className="px-4 py-2 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
-            >
-              Buka Spin Wheel Yel-Yel
-            </button>
-          </div>
-
           {/* Tabs */}
-          <div className="mt-4 flex w-full justify-center">
+          <div className="mt-6 flex w-full justify-center">
             <div className="flex max-w-full flex-wrap items-center justify-center gap-3 overflow-x-auto no-scrollbar px-1">
               <TabButton active={activeTab === "summary"} onClick={() => setActive("summary")}>Klasemen</TabButton>
               <TabButton active={activeTab === "roster"} onClick={() => setActive("roster")}>Daftar Kelompok</TabButton>
@@ -325,25 +280,30 @@ export default function App() {
 
           {/* Content */}
           {activeTab === "summary" ? (
-            <div className="mt-6 flex flex-wrap justify-center gap-4">
+            <div className="mt-8 flex flex-wrap justify-center gap-6">
               {ranked.map((t, idx) => (
                 <motion.div key={t.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="basis-[340px] grow-0 shrink-0">
-                  <TeamCard team={t} events={state.events} scores={state.scores} rankLabel={idx === 0 ? "Juara 1" : idx === 1 ? "Juara 2" : idx === 2 ? "Juara 3" : `#${idx + 1}`} />
+                  <TeamCard
+                    team={t}
+                    events={state.events}
+                    scores={state.scores}
+                    rankLabel={idx === 0 ? "Juara 1" : idx === 1 ? "Juara 2" : idx === 2 ? "Juara 3" : `#${idx + 1}`}
+                  />
                 </motion.div>
               ))}
             </div>
           ) : activeTab === "roster" ? (
-            <div className="mt-6">
+            <div className="mt-8">
               <AudienceRoster teams={state.teams} />
             </div>
           ) : (
-            <div className="mt-6 space-y-6">
+            <div className="mt-8 space-y-6">
               {state.events.filter((e) => e.id === activeTab).map((e) => (
                 <div key={e.id} className="max-w-[120rem] mx-auto">
                   <div className="font-semibold text-red-800 text-center mb-3">
                     {e.name} <span className="text-xs text-red-700">· Maks {e.weight}</span>
                   </div>
-                  <div className="grid justify-items-center gap-4 mx-auto grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid justify-items-center gap-6 mx-auto grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                     {state.teams.map((t) => {
                       const groupNo =
                         (t as any).groupNo ??
@@ -361,7 +321,11 @@ export default function App() {
                           </div>
                           <div className="flex justify-center">
                             <input
-                              type="number" inputMode="numeric" min={0} max={e.weight} step={1}
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={e.weight}
+                              step={1}
                               value={state.scores[e.id]?.[t.id] ?? 0}
                               onChange={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
                               onBlur={(ev) => setScore(e.id, t.id, Number(ev.target.value))}
@@ -376,7 +340,12 @@ export default function App() {
                   </div>
                   <div className="mt-4 flex justify-center">
                     <button
-                      onClick={() => bump((s) => ({ ...s, scores: { ...s.scores, [e.id]: Object.fromEntries(s.teams.map((t) => [t.id, 0])) } }))}
+                      onClick={() =>
+                        bump((s) => ({
+                          ...s,
+                          scores: { ...s.scores, [e.id]: Object.fromEntries(s.teams.map((t) => [t.id, 0])) },
+                        }))
+                      }
                       className="px-4 py-2 rounded-2xl border border-red-300 bg-white text-red-700 hover:bg-red-50 transition"
                     >
                       Reset Lomba
@@ -387,11 +356,18 @@ export default function App() {
             </div>
           )}
 
-          {showConfetti && <Confetti />}
+          {showConfetti && <Confetti pieces={180} />}
 
           {/* Floating controls */}
           <div className="fixed right-4 bottom-4 z-40">
             <div className="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-2 rounded-2xl border border-red-200 shadow-lg">
+              {/* Buka Spin Wheel (operator) */}
+              <button
+                onClick={() => openWheel()}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
+                Buka Spin Wheel
+              </button>
               <button onClick={enterAudience} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
                 Mode Penonton
               </button>
@@ -403,47 +379,55 @@ export default function App() {
         </div>
       )}
 
-      {/* Overlay Spin Wheel (muncul di operator & penonton saat wheel aktif) */}
+      {/* ===== Spin Wheel Modal (render di luar layout utama) ===== */}
       <SpinWheel
-        open={wheelOpen || !!state.wheel}
-        onClose={wheelClose}
+        open={!!state.wheel?.isOpen}
+        onClose={closeWheel}
         teams={state.teams}
         wheel={state.wheel ?? null}
         readonly={audienceMode}
-        onGenerate={wheelGenerate}
-        onAdvance={wheelAdvance}
-        onReset={wheelReset}
+        onGenerate={(seed) => openWheel(seed)}
+        onAdvance={advanceWheel}
+        onReset={resetWheel}
       />
     </div>
   );
 }
 
-function TabButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void; }) {
+/* ================= Helpers & Ornamen ================= */
+
+function TabButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded-2xl border whitespace-nowrap transition-transform duration-200 ${active ? "!bg-red-600 !text-white !border-red-600" : "!bg-white !text-red-700 !border-red-300 hover:!bg-red-50"} hover:scale-[1.03] active:scale-[0.98]`}
+      className={`px-4 py-2 rounded-2xl border whitespace-nowrap transition-transform duration-200 ${
+        active ? "!bg-red-600 !text-white !border-red-600" : "!bg-white !text-red-700 !border-red-300 hover:!bg-red-50"
+      } hover:scale-[1.03] active:scale-[0.98]`}
     >
       {children}
     </button>
   );
 }
 
+/** Header poster ringkas + logo kiri/kanan (simetris, object-contain supaya logo tak penyok) */
 function HeaderPoster() {
   return (
     <div className="relative w-full mt-6">
-      {/* sisi kiri/kanan simetris & logo tidak “penyok” */}
       <div className="grid grid-cols-[120px_1fr_120px] md:grid-cols-[140px_1fr_140px] items-center px-8">
-        {/* Logo kiri */}
+        {/* Logo Perusahaan */}
         <div className="w-[120px] md:w-[140px] justify-self-start">
-          <img
-            src="/logo-company.png"
-            alt="Logo Perusahaan"
-            className="h-16 md:h-20 max-w-full object-contain mx-auto"
-          />
+          <img src="/logo-company.png" alt="Logo Perusahaan" className="h-16 md:h-20 max-w-full object-contain mx-auto" />
         </div>
 
-        {/* Tengah */}
+        {/* Judul */}
         <div className="text-center">
           <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow">
             <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">
@@ -451,24 +435,22 @@ function HeaderPoster() {
             </div>
             <div className="text-neutral-700 text-[11px] md:text-xs mt-0.5">17 AGUSTUS 2025</div>
           </div>
+
           <h1
             className="mt-3 font-extrabold text-red-700 drop-shadow-md leading-tight"
             style={{ fontSize: "clamp(2rem,2.8vw,3.2rem)" }}
           >
             BERSATU KITA GESIT
           </h1>
+
           <p className="mt-2 text-neutral-800 text-[13px] md:text-sm max-w-xl mx-auto backdrop-blur px-3 py-1.5">
             Mari kita bergerak, berinovasi, dan berkolaborasi untuk mencapai tujuan bersama.
           </p>
         </div>
 
-        {/* Logo 80 kanan */}
+        {/* Logo 80 Tahun */}
         <div className="w-[120px] md:w-[140px] justify-self-end">
-          <img
-            src="/logo-80.png"
-            alt="Logo 80 Tahun RI"
-            className="h-16 md:h-20 max-w-full object-contain mx-auto"
-          />
+          <img src="/logo-80.png" alt="Logo 80 Tahun RI" className="h-16 md:h-20 max-w-full object-contain mx-auto" />
         </div>
       </div>
     </div>
@@ -478,7 +460,10 @@ function HeaderPoster() {
 function HeroBackground() {
   return (
     <>
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center" style={{ backgroundImage: "url('/bg.jpg')", backgroundRepeat: "no-repeat", backgroundSize: "cover" }} />
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center"
+        style={{ backgroundImage: "url('/bg.jpg')", backgroundRepeat: "no-repeat", backgroundSize: "cover" }}
+      />
       <div className="pointer-events-none absolute inset-0 -z-10" />
     </>
   );
