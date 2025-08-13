@@ -9,9 +9,25 @@ import PodiumXL from "@/components/PodiumXL";
 import AudienceMatrix from "@/components/AudienceMatrix";
 import AudienceRoster from "@/components/AudienceRoster";
 import Confetti from "@/components/Confetti";
+import SpinWheel from "@/components/SpinWheel";
 import { supabase } from "@/lib/supabase";
 
 const ROW_ID = "main";
+
+/* ===== helper RNG & shuffle deterministik untuk Spin Wheel ===== */
+function makeRand(seed: number) {
+  let s = seed >>> 0;
+  return () => ((s = (1664525 * s + 1013904223) >>> 0) / 0xffffffff);
+}
+function shuffleDeterministic<T>(arr: T[], seed: number): T[] {
+  const a = [...arr];
+  const rnd = makeRand(seed);
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 export default function App() {
   const [state, setState] = useState<BoardState>(() => loadState());
@@ -21,12 +37,15 @@ export default function App() {
   const [lastTop, setLastTop] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // overlay Spin Wheel
+  const [wheelOpen, setWheelOpen] = useState(false);
+
   const bcRef = useRef<BroadcastChannel | null>(null);
   const lastRemoteVersionRef = useRef<number | null>(null);
   const stateVersionRef = useRef<number>(state.version);
   useEffect(() => { stateVersionRef.current = state.version; }, [state.version]);
 
-  // persist + broadcast
+  // persist + broadcast (lintas-tab)
   useEffect(() => {
     saveState(state);
     try {
@@ -34,6 +53,7 @@ export default function App() {
       localStorage.setItem("board:lastVersion", String(state.version));
     } catch {}
   }, [state]);
+
   useEffect(() => {
     try { bcRef.current = new BroadcastChannel("board-sync"); } catch {}
     return () => { try { bcRef.current?.close(); } catch {} };
@@ -55,7 +75,7 @@ export default function App() {
     [state.teams, totals]
   );
 
-  // confetti
+  // confetti saat pemimpin berubah
   useEffect(() => {
     if (ranked[0]?.id && ranked[0]?.id !== lastTop) {
       setLastTop(ranked[0].id);
@@ -126,12 +146,14 @@ export default function App() {
 
     const channel = supabase
       .channel("board-main")
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "board", filter: `id=eq.${ROW_ID}` },
         (payload) => {
           const next = (payload.new as any)?.state as BoardState | undefined;
           if (next) apply(next);
-        })
+        }
+      )
       .subscribe((status) => console.log("SUB_STATUS", status));
 
     const onBC = (ev: MessageEvent) => { if ((ev as any)?.data?.type === "STATE") apply(loadState()); };
@@ -170,6 +192,49 @@ export default function App() {
   const activeEvent = state.currentEventId ? state.events.find((e) => e.id === state.currentEventId) : null;
   const showRosterOnly = activeEvent ? !eventHasAnyScore(activeEvent.id) : !globalHasAnyScore;
 
+  /* ====== Spin Wheel handlers ====== */
+  // audience otomatis buka overlay kalau wheel aktif
+  useEffect(() => {
+    if (audienceMode && state.wheel?.startedAt) setWheelOpen(true);
+  }, [audienceMode, state.wheel?.startedAt]);
+
+  function wheelGenerate(seed: number) {
+    bump((s) => {
+      const ids = s.teams.map((t) => t.id);
+      const queue = shuffleDeterministic(ids, seed);
+      return {
+        ...s,
+        wheel: {
+          mode: "yelyel",
+          seed,
+          startedAt: new Date().toISOString(),
+          queueIds: queue,
+          activeIndex: 0,
+        },
+      };
+    });
+    setWheelOpen(true);
+  }
+
+  function wheelAdvance() {
+    bump((s) => {
+      if (!s.wheel) return s;
+      const next = Math.min(s.wheel.activeIndex + 1, s.wheel.queueIds.length - 1);
+      return { ...s, wheel: { ...s.wheel, activeIndex: next } };
+    });
+    setShowConfetti(true);
+    setTimeout(() => setShowConfetti(false), 900);
+  }
+
+  function wheelReset() {
+    bump((s) => ({ ...s, wheel: null }));
+    setWheelOpen(false);
+  }
+
+  function wheelClose() {
+    setWheelOpen(false);
+  }
+
   /* ===================== UI ===================== */
   return (
     <div className="min-h-screen w-full relative">
@@ -205,7 +270,6 @@ export default function App() {
             );
           })()}
 
-
           <div className="mt-8 space-y-8">
             {showRosterOnly ? (
               <AudienceRoster teams={state.teams} />
@@ -236,8 +300,18 @@ export default function App() {
         <div className="relative mx-auto w-full max-w-[120rem] px-4 lg:px-8 py-6">
           <HeaderPoster />
 
+          {/* tombol Spin Wheel */}
+          <div className="mt-3 flex justify-center">
+            <button
+              onClick={() => setWheelOpen(true)}
+              className="px-4 py-2 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+            >
+              Buka Spin Wheel Yel-Yel
+            </button>
+          </div>
+
           {/* Tabs */}
-          <div className="mt-6 flex w-full justify-center">
+          <div className="mt-4 flex w-full justify-center">
             <div className="flex max-w-full flex-wrap items-center justify-center gap-3 overflow-x-auto no-scrollbar px-1">
               <TabButton active={activeTab === "summary"} onClick={() => setActive("summary")}>Klasemen</TabButton>
               <TabButton active={activeTab === "roster"} onClick={() => setActive("roster")}>Daftar Kelompok</TabButton>
@@ -251,7 +325,7 @@ export default function App() {
 
           {/* Content */}
           {activeTab === "summary" ? (
-            <div className="mt-8 flex flex-wrap justify-center gap-6">
+            <div className="mt-6 flex flex-wrap justify-center gap-4">
               {ranked.map((t, idx) => (
                 <motion.div key={t.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="basis-[340px] grow-0 shrink-0">
                   <TeamCard team={t} events={state.events} scores={state.scores} rankLabel={idx === 0 ? "Juara 1" : idx === 1 ? "Juara 2" : idx === 2 ? "Juara 3" : `#${idx + 1}`} />
@@ -259,17 +333,17 @@ export default function App() {
               ))}
             </div>
           ) : activeTab === "roster" ? (
-            <div className="mt-8">
+            <div className="mt-6">
               <AudienceRoster teams={state.teams} />
             </div>
           ) : (
-            <div className="mt-8 space-y-6">
+            <div className="mt-6 space-y-6">
               {state.events.filter((e) => e.id === activeTab).map((e) => (
                 <div key={e.id} className="max-w-[120rem] mx-auto">
                   <div className="font-semibold text-red-800 text-center mb-3">
                     {e.name} <span className="text-xs text-red-700">· Maks {e.weight}</span>
                   </div>
-                  <div className="grid justify-items-center gap-6 mx-auto grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid justify-items-center gap-4 mx-auto grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                     {state.teams.map((t) => {
                       const groupNo =
                         (t as any).groupNo ??
@@ -328,6 +402,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Overlay Spin Wheel (muncul di operator & penonton saat wheel aktif) */}
+      <SpinWheel
+        open={wheelOpen || !!state.wheel}
+        onClose={wheelClose}
+        teams={state.teams}
+        wheel={state.wheel ?? null}
+        readonly={audienceMode}
+        onGenerate={wheelGenerate}
+        onAdvance={wheelAdvance}
+        onReset={wheelReset}
+      />
     </div>
   );
 }
@@ -346,7 +432,7 @@ function TabButton({ active, children, onClick }: { active: boolean; children: R
 function HeaderPoster() {
   return (
     <div className="relative w-full mt-6">
-      {/* sisi kiri/kanan dibuat lebih lega dan simetris */}
+      {/* sisi kiri/kanan simetris & logo tidak “penyok” */}
       <div className="grid grid-cols-[120px_1fr_120px] md:grid-cols-[140px_1fr_140px] items-center px-8">
         {/* Logo kiri */}
         <div className="w-[120px] md:w-[140px] justify-self-start">
