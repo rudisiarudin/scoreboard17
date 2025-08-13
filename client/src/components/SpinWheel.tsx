@@ -1,7 +1,6 @@
 // src/components/SpinWheel.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { motion } from "framer-motion";
-import type { CSSProperties } from "react";
 import type { Team, WheelState } from "@/types";
 
 type Props = {
@@ -77,7 +76,6 @@ export default function SpinWheel({
   const [angle, setAngle] = useState(0);
   const turnRef = useRef(0);
 
-  // Setel sudut putar saat aktifIndex berubah atau saat wheel baru dibuat.
   useEffect(() => {
     if (!items.length) return;
 
@@ -85,13 +83,10 @@ export default function SpinWheel({
     const idx = wheel ? wheel.activeIndex : 0;
     const mid = idx * seg + seg / 2;
 
-    // Tambah putaran supaya selalu maju (feel "spin")
-    // 2 putaran penuh setiap perubahan (720 derajat)
+    // bikin terasa “spin”: tambah 2 putaran tiap pindah
     turnRef.current = Math.max(turnRef.current + 1, 1);
-
-    const target = turnRef.current * 720 - mid; // pointer di top = sudut 0 → rotasi -mid
+    const target = turnRef.current * 720 - mid; // pointer di atas = 0°, jadi putar -mid
     setAngle(target);
-  // penting: depend on activeIndex dan n (jumlah segmen)
   }, [wheel?.activeIndex, n]); 
 
   return (
@@ -151,7 +146,7 @@ export default function SpinWheel({
                   const ly = cy + labelR * Math.sin(toRad(mid));
 
                   const label = `Kelompok ${getGroupNo(t, i)}`;
-                  const isFirst = i === 0; // hanya aksen visual ringan
+                  const isFirst = i === 0; // aksen visual ringan
 
                   return (
                     <g key={t.id}>
@@ -181,7 +176,7 @@ export default function SpinWheel({
                     onClick={() => onGenerate?.(((Math.random() * 2 ** 31) ^ Date.now()) >>> 0)}
                     className="px-4 py-2 rounded-xl bg-red-600 text-white shadow hover:bg-red-700"
                   >
-                    Buat Urutan (Putar Semua)
+                    Mulai Undi (Buat Urutan)
                   </button>
                 ) : (
                   <>
@@ -194,13 +189,13 @@ export default function SpinWheel({
                           : "bg-red-600 hover:bg-red-700"
                       }`}
                     >
-                      Berikutnya
+                      Putar Lagi
                     </button>
                     <button
                       onClick={onReset}
                       className="px-4 py-2 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
                     >
-                      Reset Urutan
+                      Reset Undian
                     </button>
                   </>
                 )}
@@ -210,28 +205,34 @@ export default function SpinWheel({
 
           {/* panel kanan */}
           <div className="flex flex-col gap-4">
-            {/* Urutan Penampilan */}
-            <div>
-              <div className="text-xs uppercase tracking-wide text-black/60">Urutan Penampilan</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {items.map((t, i) => {
-                  const isCurrent = !!wheel && i === wheel.activeIndex;
-                  const no = getGroupNo(t, i);
-                  return (
-                    <span
-                      key={t.id}
-                      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isCurrent ? "bg-red-50 border-red-200" : "bg-white"}`}
-                      style={{ borderColor: isCurrent ? "#fecaca" : "#e5e7eb", color: isCurrent ? "#b91c1c" : "#374151" }}
-                    >
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
-                      <span className="font-semibold tabular-nums">#{i + 1}</span>
-                      <span>{`Kelompok ${no}`}</span>
-                      {isCurrent ? <span className="ml-1 text-[10px] text-red-700">· sekarang</span> : null}
-                    </span>
-                  );
-                })}
+            {/* Hasil Undian: hanya yang sudah keluar */}
+            {wheel && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-black/60">Hasil Undian</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {items
+                    .slice(0, Math.max(0, (wheel.activeIndex ?? -1) + 1))
+                    .map((t, i) => {
+                      const no = getGroupNo(t, i);
+                      const isCurrent = i === wheel.activeIndex;
+                      return (
+                        <span
+                          key={t.id}
+                          className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${
+                            isCurrent ? "bg-red-50 border-red-200" : "bg-white"
+                          }`}
+                          style={{ borderColor: isCurrent ? "#fecaca" : "#e5e7eb", color: isCurrent ? "#b91c1c" : "#374151" }}
+                        >
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
+                          <span className="font-semibold tabular-nums">#{i + 1}</span>
+                          <span>{`Kelompok ${no}`}</span>
+                          {isCurrent ? <span className="ml-1 text-[10px] text-red-700">· sekarang</span> : null}
+                        </span>
+                      );
+                    })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Kelompok sekarang (roster) */}
             {currentTeam && (
@@ -265,7 +266,7 @@ export default function SpinWheel({
         {/* footer */}
         <div className="px-5 py-3 border-t flex items-center justify-between">
           <div className="text-[11px] text-black/50">
-            Urutan dibuat sekali (deterministik dengan seed) agar identik di semua device.
+            Urutan dibuat sekali (deterministik dengan seed) agar identik di semua device. Daftar hanya tampil setelah terundi.
           </div>
           {!readonly && wheel && wheel.activeIndex >= (wheel.queueIds.length - 1) && (
             <button onClick={onReset} className="px-3 py-1.5 rounded-xl bg-red-600 text-white shadow hover:bg-red-700">
