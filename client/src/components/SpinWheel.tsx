@@ -1,5 +1,6 @@
 // src/components/SpinWheel.tsx
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 import type { Team, WheelState } from "@/types";
 
@@ -16,13 +17,13 @@ type Props = {
   onReset?: () => void;                    // hapus wheel
 };
 
-function getGroupNo(t: Team): number | undefined {
+function getGroupNo(t: Team, fallbackIndex?: number): number {
   if (typeof t.groupNo === "number") return t.groupNo;
   if (typeof t.id === "string") {
     const m = /^kel(\d+)$/i.exec(t.id);
-    if (m) return Number(m[1]) || undefined;
+    if (m) return Number(m[1]) || (fallbackIndex ?? 0) + 1;
   }
-  return undefined;
+  return (fallbackIndex ?? 0) + 1; // fallback: urutan tampil
 }
 
 export default function SpinWheel({
@@ -42,13 +43,15 @@ export default function SpinWheel({
     () => (wheel?.queueIds ?? []).map((id) => mapTeam.get(id)).filter(Boolean) as Team[],
     [wheel?.queueIds, mapTeam]
   );
+  const items = queueTeams.length ? queueTeams : teams; // fallback kalau wheel belum dibuat
+
   const currentTeam =
     wheel && wheel.queueIds[wheel.activeIndex]
       ? mapTeam.get(wheel.queueIds[wheel.activeIndex]!)
       : null;
 
-  // tampilan roda statis (visual ring)
-  const n = Math.max(queueTeams.length || teams.length, 1);
+  // ====== SVG & geometry ======
+  const n = Math.max(items.length, 1);
   const seg = 360 / n;
   const cx = 160, cy = 160, r = 140;
 
@@ -69,6 +72,27 @@ export default function SpinWheel({
     textAnchor: "middle",
     dominantBaseline: "middle",
   };
+
+  // ====== ROTASI / ANIMASI ======
+  const [angle, setAngle] = useState(0);
+  const turnRef = useRef(0);
+
+  // Setel sudut putar saat aktifIndex berubah atau saat wheel baru dibuat.
+  useEffect(() => {
+    if (!items.length) return;
+
+    // index aktif (0 kalau belum ada wheel)
+    const idx = wheel ? wheel.activeIndex : 0;
+    const mid = idx * seg + seg / 2;
+
+    // Tambah putaran supaya selalu maju (feel "spin")
+    // 2 putaran penuh setiap perubahan (720 derajat)
+    turnRef.current = Math.max(turnRef.current + 1, 1);
+
+    const target = turnRef.current * 720 - mid; // pointer di top = sudut 0 → rotasi -mid
+    setAngle(target);
+  // penting: depend on activeIndex dan n (jumlah segmen)
+  }, [wheel?.activeIndex, n]); 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -98,6 +122,7 @@ export default function SpinWheel({
         <div className="p-5 grid grid-cols-1 md:grid-cols-[1fr_320px] gap-6 items-start">
           {/* roda visual */}
           <div className="relative mx-auto">
+            {/* pointer di atas */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10">
               <div className="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[18px] border-l-transparent border-r-transparent border-b-red-600 drop-shadow" />
             </div>
@@ -111,15 +136,22 @@ export default function SpinWheel({
 
               <circle cx={cx} cy={cy} r={r + 1} fill="#fff" filter="url(#soft)" />
 
-              <g transform={`translate(0 0)`}>
-                {(queueTeams.length ? queueTeams : teams).map((t, i) => {
+              {/* GROUP yang diputar */}
+              <motion.g
+                animate={{ rotate: angle }}
+                transition={{ duration: 2.4, ease: "easeInOut" }}
+                transform-origin={`${cx}px ${cy}px`}
+              >
+                {items.map((t, i) => {
                   const start = i * seg;
                   const end = start + seg;
                   const mid = start + seg / 2;
                   const labelR = r * 0.65;
                   const lx = cx + labelR * Math.cos(toRad(mid));
                   const ly = cy + labelR * Math.sin(toRad(mid));
-                  const isFirst = !!wheel && i === 0;
+
+                  const label = `Kelompok ${getGroupNo(t, i)}`;
+                  const isFirst = i === 0; // hanya aksen visual ringan
 
                   return (
                     <g key={t.id}>
@@ -130,13 +162,14 @@ export default function SpinWheel({
                         strokeWidth={isFirst ? 3 : 2}
                       />
                       <text x={lx} y={ly} style={labelStyle} transform={`rotate(${mid}, ${lx}, ${ly})`}>
-                        {t.name}
+                        {label}
                       </text>
                     </g>
                   );
                 })}
-              </g>
+              </motion.g>
 
+              {/* hub */}
               <circle cx={cx} cy={cy} r={26} fill="#fff" stroke="#fecaca" strokeWidth={2} />
               <circle cx={cx} cy={cy} r={8} fill="#ef4444" />
             </svg>
@@ -181,9 +214,9 @@ export default function SpinWheel({
             <div>
               <div className="text-xs uppercase tracking-wide text-black/60">Urutan Penampilan</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {(queueTeams.length ? queueTeams : teams).map((t, i) => {
+                {items.map((t, i) => {
                   const isCurrent = !!wheel && i === wheel.activeIndex;
-                  const no = getGroupNo(t);
+                  const no = getGroupNo(t, i);
                   return (
                     <span
                       key={t.id}
@@ -192,7 +225,7 @@ export default function SpinWheel({
                     >
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
                       <span className="font-semibold tabular-nums">#{i + 1}</span>
-                      <span>{t.name}{no ? ` (Kelompok ${no})` : ""}</span>
+                      <span>{`Kelompok ${no}`}</span>
                       {isCurrent ? <span className="ml-1 text-[10px] text-red-700">· sekarang</span> : null}
                     </span>
                   );
@@ -207,12 +240,11 @@ export default function SpinWheel({
                 <div className="mt-2 rounded-xl border border-red-200 bg-white p-3">
                   <div className="text-center">
                     <div className="text-lg font-extrabold" style={{ color: currentTeam.color }}>
-                      {currentTeam.name}
+                      {`Kelompok ${getGroupNo(currentTeam)}`}
                     </div>
-                    {(() => {
-                      const gn = getGroupNo(currentTeam);
-                      return gn ? <div className="text-[12px] text-black/60">Kelompok {gn} · Urutan #{(wheel?.activeIndex ?? 0) + 1}</div> : null;
-                    })()}
+                    <div className="text-[12px] text-black/60">
+                      Urutan #{(wheel?.activeIndex ?? 0) + 1}
+                    </div>
                   </div>
 
                   {Array.isArray(currentTeam.members) && currentTeam.members.length > 0 && (
