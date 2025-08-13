@@ -1,7 +1,6 @@
 // src/components/SpinWheel.tsx
 import { useMemo } from "react";
 import type { CSSProperties } from "react";
-import { motion } from "framer-motion";
 import type { Team, WheelState } from "@/types";
 
 type Props = {
@@ -12,8 +11,8 @@ type Props = {
   wheel: WheelState | null | undefined;
 
   readonly?: boolean;                      // audience = true
-  onGenerate?: (seed: number) => void;     // buat urutan penuh (sekali putar)
-  onAdvance?: () => void;                  // ke urutan berikutnya (activeIndex++)
+  onGenerate?: (seed: number) => void;     // buat urutan penuh
+  onAdvance?: () => void;                  // ke urutan berikutnya
   onReset?: () => void;                    // hapus wheel
 };
 
@@ -48,7 +47,7 @@ export default function SpinWheel({
       ? mapTeam.get(wheel.queueIds[wheel.activeIndex]!)
       : null;
 
-  // tampilan roda sederhana (bukan acak per segmen; urutan sudah fixed)
+  // tampilan roda statis (visual ring)
   const n = Math.max(queueTeams.length || teams.length, 1);
   const seg = 360 / n;
   const cx = 160, cy = 160, r = 140;
@@ -97,9 +96,8 @@ export default function SpinWheel({
         </div>
 
         <div className="p-5 grid grid-cols-1 md:grid-cols-[1fr_320px] gap-6 items-start">
-          {/* "roda" statis hanya sebagai visual ring daftar */}
+          {/* roda visual */}
           <div className="relative mx-auto">
-            {/* pointer ke atas (menandai #1) */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10">
               <div className="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[18px] border-l-transparent border-r-transparent border-b-red-600 drop-shadow" />
             </div>
@@ -121,9 +119,8 @@ export default function SpinWheel({
                   const labelR = r * 0.65;
                   const lx = cx + labelR * Math.cos(toRad(mid));
                   const ly = cy + labelR * Math.sin(toRad(mid));
-
-                  // highlight #1 di ring
                   const isFirst = !!wheel && i === 0;
+
                   return (
                     <g key={t.id}>
                       <path
@@ -140,12 +137,10 @@ export default function SpinWheel({
                 })}
               </g>
 
-              {/* hub */}
               <circle cx={cx} cy={cy} r={26} fill="#fff" stroke="#fecaca" strokeWidth={2} />
               <circle cx={cx} cy={cy} r={8} fill="#ef4444" />
             </svg>
 
-            {/* controls bawah wheel */}
             {!readonly && (
               <div className="mt-3 flex items-center justify-center gap-2">
                 {!wheel ? (
@@ -180,7 +175,7 @@ export default function SpinWheel({
             )}
           </div>
 
-          {/* panel kanan: urutan & roster kelompok pertama/sedang tampil */}
+          {/* panel kanan */}
           <div className="flex flex-col gap-4">
             {/* Urutan Penampilan */}
             <div>
@@ -195,10 +190,7 @@ export default function SpinWheel({
                       className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${isCurrent ? "bg-red-50 border-red-200" : "bg-white"}`}
                       style={{ borderColor: isCurrent ? "#fecaca" : "#e5e7eb", color: isCurrent ? "#b91c1c" : "#374151" }}
                     >
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: t.color }}
-                      />
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
                       <span className="font-semibold tabular-nums">#{i + 1}</span>
                       <span>{t.name}{no ? ` (Kelompok ${no})` : ""}</span>
                       {isCurrent ? <span className="ml-1 text-[10px] text-red-700">· sekarang</span> : null}
@@ -208,7 +200,7 @@ export default function SpinWheel({
               </div>
             </div>
 
-            {/* Kelompok sekarang (tampilkan roster) */}
+            {/* Kelompok sekarang (roster) */}
             {currentTeam && (
               <div className="mt-1">
                 <div className="text-xs uppercase tracking-wide text-black/60 text-center">Kelompok Dimulai</div>
@@ -225,7 +217,6 @@ export default function SpinWheel({
 
                   {Array.isArray(currentTeam.members) && currentTeam.members.length > 0 && (
                     <div className="mt-3">
-                      {/* daftar anggota 2 kolom, agak besar, bukan bold */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[15px] leading-6">
                         {currentTeam.members.map((m, i) => (
                           <div key={i} className="truncate">{m}</div>
