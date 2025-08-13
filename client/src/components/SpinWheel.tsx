@@ -44,12 +44,7 @@ export default function SpinWheel({
   );
   const items = queueTeams.length ? queueTeams : teams; // fallback kalau wheel belum dibuat
 
-  const currentTeam =
-    wheel && wheel.queueIds[wheel.activeIndex]
-      ? mapTeam.get(wheel.queueIds[wheel.activeIndex]!)
-      : null;
-
-  // ====== SVG & geometry ======
+  // ====== geometri roda ======
   const n = Math.max(items.length, 1);
   const seg = 360 / n;
   const cx = 160, cy = 160, r = 140;
@@ -72,22 +67,49 @@ export default function SpinWheel({
     dominantBaseline: "middle",
   };
 
-  // ====== ROTASI / ANIMASI ======
+  // ====== animasi putar ======
+  const SPIN_S = 2.4;                               // ★ durasi animasi (detik)
   const [angle, setAngle] = useState(0);
   const turnRef = useRef(0);
 
+  // ★ revealIndex menahan “hasil undian” sampai animasi selesai
+  const [revealIndex, setRevealIndex] = useState<number>(-1);
+  const spinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // clear timer saat unmount / perubahan
+    return () => { if (spinTimer.current) clearTimeout(spinTimer.current); };
+  }, []);
+
+  // ★ setiap activeIndex berubah (realtime), putar dulu → baru reveal
   useEffect(() => {
     if (!items.length) return;
-
-    // index aktif (0 kalau belum ada wheel)
     const idx = wheel ? wheel.activeIndex : 0;
     const mid = idx * seg + seg / 2;
 
-    // bikin terasa “spin”: tambah 2 putaran tiap pindah
+    // pointer sebelumnya terasa kebalik → balik arah di sini:
+    // SVG rotasi +deg = clockwise. Agar segmen "mid" jatuh ke pointer TOP,
+    // kita putar sebesar (+mid), bukan -mid. (sebelumnya -mid)
     turnRef.current = Math.max(turnRef.current + 1, 1);
-    const target = turnRef.current * 720 - mid; // pointer di atas = 0°, jadi putar -mid
+    const target = turnRef.current * 720 + mid;     // ★ arah dibalik
+
     setAngle(target);
-  }, [wheel?.activeIndex, n]); 
+
+    // tunda penampilan hasil (chips/roster) sampai animasi selesai
+    if (spinTimer.current) clearTimeout(spinTimer.current);
+    spinTimer.current = setTimeout(() => {
+      setRevealIndex(idx);                          // ★ baru tampilkan hasil
+    }, SPIN_S * 1000 - 50);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wheel?.activeIndex, n]); // depend ke index & jumlah segmen
+
+  // index yang sudah boleh ditampilkan ke user
+  const shownIndex = Math.min(revealIndex, wheel?.activeIndex ?? -1);
+
+  const currentTeam =
+    shownIndex >= 0 && wheel && wheel.queueIds[shownIndex]
+      ? mapTeam.get(wheel.queueIds[shownIndex]!)
+      : null;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -102,7 +124,7 @@ export default function SpinWheel({
           <div className="flex items-center gap-2">
             {!readonly && wheel && (
               <button
-                onClick={onReset}
+                onClick={() => { setRevealIndex(-1); onReset?.(); }}
                 className="px-3 py-1.5 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
               >
                 Reset
@@ -129,12 +151,12 @@ export default function SpinWheel({
                 </filter>
               </defs>
 
-              <circle cx={cx} cy={cy} r={r + 1} fill="#fff" filter="url(#soft)" />
+              <circle cx={160} cy={160} r={r + 1} fill="#fff" filter="url(#soft)" />
 
               {/* GROUP yang diputar */}
               <motion.g
                 animate={{ rotate: angle }}
-                transition={{ duration: 2.4, ease: "easeInOut" }}
+                transition={{ duration: SPIN_S, ease: "easeInOut" }}
                 transform-origin={`${cx}px ${cy}px`}
               >
                 {items.map((t, i) => {
@@ -146,7 +168,7 @@ export default function SpinWheel({
                   const ly = cy + labelR * Math.sin(toRad(mid));
 
                   const label = `Kelompok ${getGroupNo(t, i)}`;
-                  const isFirst = i === 0; // aksen visual ringan
+                  const isFirst = i === 0;
 
                   return (
                     <g key={t.id}>
@@ -173,7 +195,7 @@ export default function SpinWheel({
               <div className="mt-3 flex items-center justify-center gap-2">
                 {!wheel ? (
                   <button
-                    onClick={() => onGenerate?.(((Math.random() * 2 ** 31) ^ Date.now()) >>> 0)}
+                    onClick={() => { setRevealIndex(-1); onGenerate?.(((Math.random() * 2 ** 31) ^ Date.now()) >>> 0); }}
                     className="px-4 py-2 rounded-xl bg-red-600 text-white shadow hover:bg-red-700"
                   >
                     Mulai Undi (Buat Urutan)
@@ -181,7 +203,7 @@ export default function SpinWheel({
                 ) : (
                   <>
                     <button
-                      onClick={onAdvance}
+                      onClick={() => { onAdvance?.(); }}
                       disabled={wheel.activeIndex >= (wheel.queueIds.length - 1)}
                       className={`px-4 py-2 rounded-xl text-white shadow ${
                         wheel.activeIndex >= (wheel.queueIds.length - 1)
@@ -192,7 +214,7 @@ export default function SpinWheel({
                       Putar Lagi
                     </button>
                     <button
-                      onClick={onReset}
+                      onClick={() => { setRevealIndex(-1); onReset?.(); }}
                       className="px-4 py-2 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
                     >
                       Reset Undian
@@ -205,16 +227,16 @@ export default function SpinWheel({
 
           {/* panel kanan */}
           <div className="flex flex-col gap-4">
-            {/* Hasil Undian: hanya yang sudah keluar */}
-            {wheel && (
+            {/* Hasil Undian (hanya yang SUDAH ter-reveal) */}
+            {wheel && shownIndex >= 0 && (
               <div>
                 <div className="text-xs uppercase tracking-wide text-black/60">Hasil Undian</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {items
-                    .slice(0, Math.max(0, (wheel.activeIndex ?? -1) + 1))
+                    .slice(0, shownIndex + 1)   // ★ hanya sampai yang sudah di-reveal
                     .map((t, i) => {
                       const no = getGroupNo(t, i);
-                      const isCurrent = i === wheel.activeIndex;
+                      const isCurrent = i === shownIndex;
                       return (
                         <span
                           key={t.id}
@@ -234,7 +256,7 @@ export default function SpinWheel({
               </div>
             )}
 
-            {/* Kelompok sekarang (roster) */}
+            {/* Kelompok Dimulai (setelah reveal) */}
             {currentTeam && (
               <div className="mt-1">
                 <div className="text-xs uppercase tracking-wide text-black/60 text-center">Kelompok Dimulai</div>
@@ -244,7 +266,7 @@ export default function SpinWheel({
                       {`Kelompok ${getGroupNo(currentTeam)}`}
                     </div>
                     <div className="text-[12px] text-black/60">
-                      Urutan #{(wheel?.activeIndex ?? 0) + 1}
+                      Urutan #{shownIndex + 1}
                     </div>
                   </div>
 
@@ -260,16 +282,21 @@ export default function SpinWheel({
                 </div>
               </div>
             )}
+
+            {/* Saat belum ada yang reveal, tampilkan info kecil */}
+            {wheel && shownIndex < 0 && (
+              <div className="text-[12px] text-black/60 italic">Tekan “Mulai Undi” atau “Putar Lagi” untuk memulai.</div>
+            )}
           </div>
         </div>
 
         {/* footer */}
         <div className="px-5 py-3 border-t flex items-center justify-between">
           <div className="text-[11px] text-black/50">
-            Urutan dibuat sekali (deterministik dengan seed) agar identik di semua device. Daftar hanya tampil setelah terundi.
+            Urutan dibuat sekali (deterministik dengan seed) agar identik di semua device. Hasil ditampilkan setelah roda berhenti.
           </div>
           {!readonly && wheel && wheel.activeIndex >= (wheel.queueIds.length - 1) && (
-            <button onClick={onReset} className="px-3 py-1.5 rounded-xl bg-red-600 text-white shadow hover:bg-red-700">
+            <button onClick={() => { setRevealIndex(-1); onReset?.(); }} className="px-3 py-1.5 rounded-xl bg-red-600 text-white shadow hover:bg-red-700">
               Selesai (Tutup & Bersihkan)
             </button>
           )}
