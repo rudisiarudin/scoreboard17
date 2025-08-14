@@ -1,5 +1,4 @@
 // src/types.ts
-
 export interface PendingSpin {
   targetIndex: number;
   startedAt: number;
@@ -14,11 +13,11 @@ export interface WheelState {
   queueIds: string[];
   activeIndex: number;
 
-  // Fields yang memang dipakai di App & SpinWheel saat ini:
+  // DIPAKAI di App.tsx & SpinWheel:
   isOpen: boolean;
   pendingSpin: PendingSpin | null;
 
-  // (Opsional) tetap ada kalau file lain menggunakannya:
+  // JAGA KOMPATIBILITAS: kalau ada kode lain pakai ini, biarkan opsional
   mode?: WheelMode;
   startedAt?: number | null;
 }
@@ -27,14 +26,12 @@ export interface Team {
   id: string;
   name: string;
   color: string;
-  // Tambahan field lain (jika ada) biarkan seperti semula
 }
 
 export interface Event {
   id: string;
   name: string;
   weight: number;
-  // Tambahan field lain (jika ada) biarkan seperti semula
 }
 
 // eventId -> (teamId -> score)
@@ -47,6 +44,5 @@ export interface BoardState {
   teams: Team[];
   events: Event[];
   scores: Scores;
-  // penting: non-null supaya tidak kejadian WheelState | null
-  wheel: WheelState;
+  wheel: WheelState; // NON-NULL
 }
