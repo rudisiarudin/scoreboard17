@@ -1,7 +1,7 @@
 // src/App.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { BoardState } from "@/types";
+import type { BoardState, WheelState } from "@/types";
 import { loadState, saveState } from "@/lib/state";
 import { computeTotals } from "@/lib/totals";
 import TeamCard from "@/components/TeamCard";
@@ -34,17 +34,51 @@ export default function App() {
   useEffect(() => {
     saveState(state);
     try {
-      // simpan juga versi untuk fallback storage event
+      // Simpan juga versi untuk fallback storage event
       localStorage.setItem("board:lastVersion", String(state.version));
       // ⬇️ KIRIM STATE PENUH supaya tab lain apply tanpa delay
       bcRef.current?.postMessage({ type: "STATE_FULL", version: state.version, payload: state });
     } catch {}
   }, [state]);
 
+  // Daftarkan BroadcastChannel lebih awal + listener aktif (tanpa delay)
   useEffect(() => {
-    try { bcRef.current = new BroadcastChannel("board-sync"); } catch {}
-    return () => { try { bcRef.current?.close(); } catch {} };
-  }, []);
+    try {
+      bcRef.current = new BroadcastChannel("board-sync");
+      bcRef.current.onmessage = (ev: MessageEvent) => {
+        const msg = (ev as any)?.data;
+        if (!msg) return;
+        // Terima payload penuh (instan)
+        if (msg.type === "STATE_FULL" && msg.payload) {
+          const next = msg.payload as BoardState;
+          const incoming = typeof next.version === "number" ? next.version : -1;
+          const localv = stateVersionRef.current ?? 0;
+          if (audienceMode || incoming > localv) {
+            setState(next);
+          }
+          return;
+        }
+        // Fallback: hanya sinyal (ambil dari localStorage)
+        if (msg.type === "STATE") {
+          const next = loadState();
+          const incoming = typeof next.version === "number" ? next.version : -1;
+          const localv = stateVersionRef.current ?? 0;
+          if (audienceMode || incoming > localv) {
+            setState(next);
+          }
+        }
+      };
+    } catch {}
+
+    return () => {
+      try {
+        if (bcRef.current) {
+          (bcRef.current.onmessage as any) = null;
+          bcRef.current.close();
+        }
+      } catch {}
+    };
+  }, [audienceMode]);
 
   /* ============== Hash → audience mode ============== */
   useEffect(() => {
@@ -111,7 +145,7 @@ export default function App() {
   async function enterAudience() { try { await pushNow(); } catch {} location.hash = "#audience"; }
   function exitAudience() { location.hash = ""; }
 
-  /* ============== Supabase Realtime + BroadcastChannel listener ============== */
+  /* ============== Supabase Realtime + Storage fallback ============== */
   useEffect(() => {
     let alive = true;
 
@@ -124,8 +158,15 @@ export default function App() {
     };
 
     // initial fetch
-    supabase.from("board").select("state, version").eq("id", ROW_ID).single()
-      .then(({ data, error }) => { if (error) console.error("SUPABASE_SELECT_ERROR", error); if (data?.state) apply(data.state as BoardState); });
+    supabase
+      .from("board")
+      .select("state, version")
+      .eq("id", ROW_ID)
+      .single()
+      .then(({ data, error }) => {
+        if (error) console.error("SUPABASE_SELECT_ERROR", error);
+        if (data?.state) apply(data.state as BoardState);
+      });
 
     // realtime
     const channel = supabase
@@ -133,18 +174,12 @@ export default function App() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "board", filter: `id=eq.${ROW_ID}` },
-        (payload) => { const next = (payload.new as any)?.state as BoardState | undefined; if (next) apply(next); },
+        (payload) => {
+          const next = (payload.new as any)?.state as BoardState | undefined;
+          if (next) apply(next);
+        },
       )
       .subscribe(() => {});
-
-    // broadcast channel (instan, tanpa lewat localStorage)
-    const onBC = (ev: MessageEvent) => {
-      const msg = (ev as any)?.data;
-      if (!msg) return;
-      if (msg.type === "STATE_FULL" && msg.payload) { apply(msg.payload as BoardState); return; }
-      if (msg.type === "STATE") { apply(loadState()); }
-    };
-    if (bcRef.current) bcRef.current.onmessage = onBC;
 
     // storage fallback
     const onStorage = (e: StorageEvent) => {
@@ -155,10 +190,10 @@ export default function App() {
     return () => {
       alive = false;
       supabase.removeChannel(channel);
-      if (bcRef.current) (bcRef.current.onmessage as any) = null;
       window.removeEventListener("storage", onStorage);
     };
   }, [audienceMode]);
+
   /* ====== LOGIKA: roster-only jika belum ada nilai ====== */
   function eventHasAnyScore(eventId: string) {
     const row = state.scores[eventId];
@@ -174,14 +209,16 @@ export default function App() {
   /* ================= SPIN WHEEL — YEL-YEL ================= */
   function openWheel() {
     if (audienceMode) return;
-    const w = (state as any).wheel;
+    // guard runtimenya kalau state lama belum punya wheel
+    const w = (state.wheel as WheelState | undefined);
     if (!w || !w.queueIds?.length) {
       generateWheel(Date.now());
     } else {
-      bump((s) => ({ ...s, wheel: { ...(s as any).wheel, isOpen: true } as any }));
+      bump((s) => ({ ...s, wheel: { ...s.wheel, isOpen: true } }));
       void pushNow();
     }
   }
+
   function generateWheel(seed?: number) {
     if (audienceMode) return;
     const ids = [...state.teams.map((t) => t.id)];
@@ -192,26 +229,40 @@ export default function App() {
       const j = Math.floor(rand() * (i + 1));
       [ids[i], ids[j]] = [ids[j], ids[i]];
     }
-    bump((s) => ({ ...s, wheel: { seed: sd, queueIds: ids, activeIndex: -1, isOpen: true, pendingSpin: null } }) as any);
+    bump((s) => ({
+      ...s,
+      wheel: {
+        seed: sd,
+        queueIds: ids,
+        activeIndex: -1,
+        isOpen: true,
+        pendingSpin: null,
+      },
+    }));
     void pushNow();
   }
+
   function startSpin() {
     if (audienceMode) return;
-    const w = (state as any).wheel as any;
+    const w = (state.wheel as WheelState | undefined);
     if (!w || w.pendingSpin) return;
     const nextIndex = Math.min((w.activeIndex ?? -1) + 1, w.queueIds.length - 1);
     const duration = 4200 + Math.floor(Math.random() * 600);
     const now = Date.now();
-    bump((s) => ({ ...s, wheel: { ...w, pendingSpin: { targetIndex: nextIndex, startedAt: now, durationMs: duration, nonce: now } } }) as any);
+    bump((s) => ({
+      ...s,
+      wheel: { ...w!, pendingSpin: { targetIndex: nextIndex, startedAt: now, durationMs: duration, nonce: now } },
+    }));
     void pushNow();
     setTimeout(() => {
-      bump((s) => ({ ...s, wheel: { ...(s as any).wheel, activeIndex: nextIndex, pendingSpin: null } }) as any);
+      bump((s) => ({ ...s, wheel: { ...s.wheel, activeIndex: nextIndex, pendingSpin: null } }));
       void pushNow();
     }, duration + 50);
   }
+
   function closeWheel() {
     if (audienceMode) return;
-    bump((s) => ({ ...s, wheel: { ...(s as any).wheel, isOpen: false } } as any));
+    bump((s) => ({ ...s, wheel: { ...s.wheel, isOpen: false } }));
     void pushNow();
   }
 
@@ -290,7 +341,7 @@ export default function App() {
   }
 
   /* ===================== UI ===================== */
-  const wheelOpen = !!(state as any).wheel?.isOpen;
+  const wheelOpen = !!state.wheel?.isOpen;
   return (
     <div className="min-h-screen w-full relative">
       <HeroBackground />
@@ -366,7 +417,16 @@ export default function App() {
           </div>
 
           {/* Spin wheel overlay untuk penonton (readonly) */}
-          <SpinWheel open={wheelOpen} onClose={() => {}} teams={state.teams} wheel={(state as any).wheel ?? null} readonly={true} onGenerate={() => {}} onSpin={() => {}} onReset={() => {}} />
+          <SpinWheel
+            open={wheelOpen}
+            onClose={() => {}}
+            teams={state.teams}
+            wheel={state.wheel}
+            readonly={true}
+            onGenerate={() => {}}
+            onSpin={() => {}}
+            onReset={() => {}}
+          />
         </div>
       ) : (
         /* ===== OPERATOR MODE ===== */
@@ -391,6 +451,7 @@ export default function App() {
             onResetOptions={thinkingResetOptions}
             onShowAllOptions={thinkingShowAllOptions}
           />
+
           {/* Tabs */}
           <div className="mt-6 flex w-full justify-center">
             <div className="flex max-w-full flex-wrap items-center justify-center gap-3 overflow-x-auto no-scrollbar px-1">
@@ -412,7 +473,12 @@ export default function App() {
           {activeTab === "summary" ? (
             <div className="mt-8 flex flex-wrap justify-center gap-6">
               {ranked.map((t, idx) => (
-                <motion.div key={t.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="basis-[340px] grow-0 shrink-0">
+                <motion.div
+                  key={t.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="basis-[340px] grow-0 shrink-0"
+                >
                   <TeamCard
                     team={t}
                     events={state.events}
@@ -441,7 +507,10 @@ export default function App() {
                           (t as any).groupNo ??
                           (typeof t.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
                         return (
-                          <div key={t.id} className="w-[320px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5">
+                          <div
+                            key={t.id}
+                            className="w-[320px] rounded-2xl border border-red-200 bg-white/92 backdrop-blur-[2px] shadow p-5"
+                          >
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
@@ -497,7 +566,10 @@ export default function App() {
           {/* Floating controls (operator) */}
           <div className="fixed right-4 bottom-4 z-40">
             <div className="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-2 rounded-2xl border border-red-200 shadow-lg">
-              <button onClick={openWheel} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
+              <button
+                onClick={openWheel}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
                 Spin Yel-Yel
               </button>
               <button
@@ -507,10 +579,16 @@ export default function App() {
               >
                 Thinking Quiz
               </button>
-              <button onClick={enterAudience} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
+              <button
+                onClick={enterAudience}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
                 Mode Penonton
               </button>
-              <button onClick={toggleFullscreen} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
+              <button
+                onClick={toggleFullscreen}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
                 {fullscreen ? "Keluar Fullscreen" : "Full Screen"}
               </button>
             </div>
@@ -521,7 +599,7 @@ export default function App() {
             open={wheelOpen}
             onClose={closeWheel}
             teams={state.teams}
-            wheel={(state as any).wheel ?? null}
+            wheel={state.wheel}
             readonly={false}
             onGenerate={(seed) => generateWheel(seed)}
             onSpin={startSpin}
