@@ -16,7 +16,7 @@ export default function SpinWheel({
   open: boolean;
   onClose: () => void;
   teams: Team[];
-  wheel: WheelState | null; // boleh null; App sudah kirim non-null tapi tetap aman
+  wheel: WheelState | null;
   readonly: boolean;
   onGenerate: (seed?: number) => void;
   onSpin: () => void;
@@ -24,22 +24,19 @@ export default function SpinWheel({
 }) {
   if (!open || !wheel) return null;
 
-  // === 1) PISAHKAN URUTAN TAMPIL (display) vs URUTAN HASIL (queue) ===
-  const displayIds = useMemo(() => teams.map((t) => t.id), [teams]); // roda digambar pakai ini (stabil)
-  const queueIds = wheel.queueIds?.length ? wheel.queueIds : displayIds; // hasil keluar mengikuti ini (acak saat reset)
+  const displayIds = useMemo(() => teams.map((t) => t.id), [teams]);
+  const queueIds = wheel.queueIds?.length ? wheel.queueIds : displayIds;
 
   const N = Math.max(1, displayIds.length);
   const STEP = 360 / N;
 
   const byId = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
 
-  // berapa banyak hasil yang sudah keluar (berdasar QUEUE)
   const revealedCount = Math.max(0, (wheel.activeIndex ?? -1) + 1);
   const revealedIds = queueIds.slice(0, revealedCount);
 
   const isSpinning = !!wheel.pendingSpin;
 
-  // === 2) MAP index QUEUE -> index DISPLAY untuk rotasi roda ===
   const qIdxToDisplayIdx = (qIdx: number) => {
     const id = queueIds[qIdx];
     const di = displayIds.indexOf(id);
@@ -53,12 +50,11 @@ export default function SpinWheel({
     ? qIdxToDisplayIdx(wheel.pendingSpin!.targetIndex)
     : currentDisplayIdx;
 
-  // ====== ALIGNMENT: pusat irisan tepat di panah (12 o’clock) ======
   const angleForDisplayIndex = (idx: number) => -(idx * STEP + STEP / 2);
 
   const fromRot = currentDisplayIdx < 0 ? 0 : angleForDisplayIndex(currentDisplayIdx);
   const toRotBase = targetDisplayIdx < 0 ? 0 : angleForDisplayIndex(targetDisplayIdx);
-  const toRot = isSpinning ? toRotBase - 360 * 5 : toRotBase; // 5 putaran penuh
+  const toRot = isSpinning ? toRotBase - 360 * 5 : toRotBase;
 
   const durSec = isSpinning ? (wheel.pendingSpin!.durationMs ?? 4200) / 1000 : 0.001;
 
@@ -90,7 +86,6 @@ export default function SpinWheel({
         <div className="grid grid-cols-1 md:grid-cols-[520px_1fr] gap-6 p-6">
           {/* roda */}
           <div className="relative mx-auto">
-            {/* PANAH — runcing keluar */}
             <div className="absolute left-1/2 -top-2 -translate-x-1/2 z-20">
               <div className="w-0 h-0 border-l-[10px] border-r-[10px] border-t-[16px] border-l-transparent border-r-transparent border-t-red-600 drop-shadow" />
             </div>
@@ -103,7 +98,6 @@ export default function SpinWheel({
               transition={{ duration: durSec, ease: [0.22, 1, 0.36, 1] }}
               style={{ willChange: "transform" }}
             >
-              {/* BACKGROUND: offset STEP/2 supaya warna pas di tengah label */}
               <div
                 className="absolute inset-0 rounded-full"
                 style={{
@@ -112,7 +106,6 @@ export default function SpinWheel({
                 }}
               />
 
-              {/* label irisan — digambar pakai DISPLAY order */}
               {displayIds.map((id, i) => {
                 const t = byId[id];
                 const no =
@@ -121,7 +114,7 @@ export default function SpinWheel({
                     ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined
                     : undefined);
 
-                const centerDeg = i * STEP + STEP / 2; // 0° di atas
+                const centerDeg = i * STEP + STEP / 2;
                 const r = 140;
                 const x = 210 + r * Math.sin((centerDeg * Math.PI) / 180);
                 const y = 210 - r * Math.cos((centerDeg * Math.PI) / 180);
@@ -145,7 +138,6 @@ export default function SpinWheel({
                 );
               })}
 
-              {/* center */}
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full border-4 border-red-200 shadow-inner" />
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-red-600 rounded-full shadow" />
             </motion.div>
@@ -175,7 +167,6 @@ export default function SpinWheel({
             </div>
           </div>
 
-          {/* hasil + roster */}
           <RightPane
             byId={byId}
             isSpinning={isSpinning}
@@ -189,7 +180,6 @@ export default function SpinWheel({
   );
 }
 
-/* ===== Right Pane kecil (biar file ringkas) ===== */
 function RightPane({
   byId,
   revealedIds,
@@ -291,7 +281,6 @@ function RightPane({
   );
 }
 
-/* ===== helpers ===== */
 function buildWheelBackground(n: number) {
   const colors = ["#22c55e", "#6366f1", "#ef4444", "#10b981", "#a855f7", "#f59e0b"];
   const seg = 360 / n;
@@ -302,6 +291,5 @@ function buildWheelBackground(n: number) {
     const a1 = (i + 1) * seg;
     stops.push(`${c} ${a0}deg ${a1}deg`);
   }
-  // 0° di atas (sinkron dengan posisi label); offset setengah langkah diberikan di layer background
   return `conic-gradient(from -90deg, ${stops.join(",")})`;
 }
