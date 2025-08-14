@@ -1,317 +1,345 @@
-// src/components/SpinWheel.tsx
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo } from "react";
 import { motion } from "framer-motion";
-import type { Team, WheelState } from "@/types";
+import type { Team } from "@/types";
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
+type PendingSpin =
+  | {
+      targetIndex: number; // index di QUEUE (urutan hasil)
+      startedAt: number;
+      durationMs: number;
+      nonce?: number;
+    }
+  | null;
 
-  teams: Team[];
-  wheel: WheelState | null | undefined;
-
-  readonly?: boolean;                      // true untuk mode penonton
-  onGenerate?: (seed: number) => void;     // buat urutan (seeded)
-  onAdvance?: () => void;                  // putar ke undian berikutnya
-  onReset?: () => void;                    // reset semua
-};
-
-function getGroupNo(t: Team, fallbackIndex?: number): number {
-  if (typeof (t as any).groupNo === "number") return (t as any).groupNo as number;
-  if (typeof t.id === "string") {
-    const m = /^kel(\d+)$/i.exec(t.id);
-    if (m) return Number(m[1]) || (fallbackIndex ?? 0) + 1;
-  }
-  return (fallbackIndex ?? 0) + 1; // fallback: urutan tampil
-}
+type WheelState =
+  | {
+      seed: number;
+      queueIds: string[]; // urutan hasil (diacak saat reset)
+      activeIndex: number; // index terakhir di QUEUE, -1 = belum ada hasil
+      isOpen: boolean;
+      pendingSpin: PendingSpin;
+    }
+  | null;
 
 export default function SpinWheel({
   open,
   onClose,
   teams,
   wheel,
-  readonly = false,
+  readonly,
   onGenerate,
-  onAdvance,
+  onSpin,
   onReset,
-}: Props) {
-  if (!open) return null;
+}: {
+  open: boolean;
+  onClose: () => void;
+  teams: Team[];
+  wheel: WheelState;
+  readonly: boolean;
+  onGenerate: (seed?: number) => void;
+  onSpin: () => void;
+  onReset: () => void;
+}) {
+  if (!open || !wheel) return null;
 
-  const mapTeam = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
-  const queueTeams = useMemo(
-    () => (wheel?.queueIds ?? []).map((id) => mapTeam.get(id)).filter(Boolean) as Team[],
-    [wheel?.queueIds, mapTeam]
-  );
-  const items = queueTeams.length ? queueTeams : teams; // fallback kalau wheel belum dibuat
+  // === 1) PISAHKAN URUTAN TAMPIL (display) vs URUTAN HASIL (queue) ===
+  const displayIds = useMemo(() => teams.map((t) => t.id), [teams]); // roda digambar pakai ini (stabil)
+  const queueIds = wheel.queueIds?.length ? wheel.queueIds : displayIds; // hasil keluar mengikuti ini (acak saat reset)
 
-  // ====== geometri roda ======
-  const n = Math.max(items.length, 1);
-  const seg = 360 / n;
-  const cx = 160, cy = 160, r = 140;
+  const N = Math.max(1, displayIds.length);
+  const STEP = 360 / N;
 
-  const toRad = (a: number) => (a - 90) * (Math.PI / 180);
-  const arcPath = (start: number, end: number) => {
-    const x1 = cx + r * Math.cos(toRad(start));
-    const y1 = cy + r * Math.sin(toRad(start));
-    const x2 = cx + r * Math.cos(toRad(end));
-    const y2 = cy + r * Math.sin(toRad(end));
-    const largeArc = end - start > 180 ? 1 : 0;
-    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+  const byId = useMemo(() => Object.fromEntries(teams.map((t) => [t.id, t])), [teams]);
+
+  // berapa banyak hasil yang sudah keluar (berdasar QUEUE)
+  const revealedCount = Math.max(0, (wheel.activeIndex ?? -1) + 1);
+  const revealedIds = queueIds.slice(0, revealedCount);
+
+  const isSpinning = !!wheel.pendingSpin;
+
+  // === 2) MAP index QUEUE -> index DISPLAY untuk rotasi roda ===
+  const qIdxToDisplayIdx = (qIdx: number) => {
+    const id = queueIds[qIdx];
+    const di = displayIds.indexOf(id);
+    return di >= 0 ? di : 0;
   };
 
-  const labelStyle: CSSProperties = {
-    fontSize: 10,
-    fontWeight: 600,
-    fill: "rgba(0,0,0,0.7)",
-    textAnchor: "middle",
-    dominantBaseline: "middle",
-  };
+  const currentQIdx = Math.max(-1, wheel.activeIndex ?? -1);
+  const currentDisplayIdx = currentQIdx >= 0 ? qIdxToDisplayIdx(currentQIdx) : -1;
 
-  // ====== animasi putar ======
-  const SPIN_S = 2.4; // durasi animasi (detik)
-  const [angle, setAngle] = useState(0);
-  const turnRef = useRef(0);
+  const targetDisplayIdx = isSpinning
+    ? qIdxToDisplayIdx(wheel.pendingSpin!.targetIndex)
+    : currentDisplayIdx;
 
-  // Hasil baru “muncul” setelah animasi selesai
-  const [revealIndex, setRevealIndex] = useState<number>(-1);
-  const spinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ====== ALIGNMENT: pusat irisan tepat di panah (12 o’clock) ======
+  const angleForDisplayIndex = (idx: number) => -(idx * STEP + STEP / 2);
 
-  useEffect(() => {
-    return () => { if (spinTimer.current) clearTimeout(spinTimer.current); };
-  }, []);
+  const fromRot = currentDisplayIdx < 0 ? 0 : angleForDisplayIndex(currentDisplayIdx);
+  const toRotBase = targetDisplayIdx < 0 ? 0 : angleForDisplayIndex(targetDisplayIdx);
+  const toRot = isSpinning ? toRotBase - 360 * 5 : toRotBase; // 5 putaran penuh
 
-  // Saat index aktif berubah (dari operator), roda berputar dulu → baru reveal
-  useEffect(() => {
-    if (!items.length) return;
-    const idx = wheel ? wheel.activeIndex : 0;
-    const mid = idx * seg + seg / 2;
+  const durSec = isSpinning ? (wheel.pendingSpin!.durationMs ?? 4200) / 1000 : 0.001;
 
-    // Perbaikan arah: rotasi +deg (clockwise) agar segmen “mid” jatuh ke pointer atas
-    turnRef.current = Math.max(turnRef.current + 1, 1);
-    const target = turnRef.current * 720 + mid;
-
-    setAngle(target);
-
-    if (spinTimer.current) clearTimeout(spinTimer.current);
-    spinTimer.current = setTimeout(() => {
-      setRevealIndex(idx); // baru tampilkan hasil undian
-    }, SPIN_S * 1000 - 50);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wheel?.activeIndex, n]);
-
-  // Index yang sudah boleh ditampilkan (chips/roster)
-  const shownIndex = Math.min(revealIndex, wheel?.activeIndex ?? -1);
-
-  const currentTeam =
-    shownIndex >= 0 && wheel && wheel.queueIds[shownIndex]
-      ? mapTeam.get(wheel.queueIds[shownIndex]!)
-      : null;
+  function GroupPill({ idx, id, now }: { idx: number; id: string; now?: boolean }) {
+    const t = byId[id];
+    const no =
+      (t as any)?.groupNo ??
+      (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
+    const dot = ["#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#a78bfa", "#22c55e"][idx % 6];
+    return (
+      <div
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-white ${
+          now ? "border-red-300 text-red-700" : "border-neutral-200 text-neutral-700"
+        }`}
+      >
+        <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: dot }} />
+        <span className="opacity-70">#{idx + 1}</span>
+        <span className="font-medium">{no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}</span>
+        {now ? <span className="ml-1 text-[11px] text-red-600">– sekarang</span> : null}
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
-      {/* backdrop — penonton tidak bisa menutup */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={!readonly ? onClose : undefined}
-      />
-
-      {/* modal */}
-      <div className="relative z-[61] w-[min(92vw,920px)] max-w-[920px] rounded-2xl bg-white shadow-2xl border border-red-200 overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center">
+      <div className="relative w-full max-w-[1120px] mx-3 rounded-2xl bg-white shadow-2xl border border-red-200">
         {/* header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b">
-          <div className="font-bold text-red-700">
-            Spin Wheel — Urutan Penampilan Yel-Yel
-          </div>
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div className="font-semibold text-red-700">Spin Wheel — Urutan Penampilan Yel-Yel</div>
           <div className="flex items-center gap-2">
-            {!readonly && wheel && (
+            {!readonly && (
               <button
-                onClick={() => { setRevealIndex(-1); onReset?.(); }}
-                className="px-3 py-1.5 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
+                onClick={onReset}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
               >
                 Reset
               </button>
             )}
-            {!readonly && (
-              <button
-                onClick={onClose}
-                className="px-3 py-1.5 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
-              >
-                Tutup
-              </button>
-            )}
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-50"
+              disabled={readonly}
+            >
+              Tutup
+            </button>
           </div>
         </div>
 
-        {/* body */}
-        <div className="p-5 grid grid-cols-1 md:grid-cols-[1fr_320px] gap-6 items-start">
-          {/* roda visual */}
+        <div className="grid grid-cols-1 md:grid-cols-[520px_1fr] gap-6 p-6">
+          {/* roda */}
           <div className="relative mx-auto">
-            {/* pointer di atas */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-10">
-              <div className="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[18px] border-l-transparent border-r-transparent border-b-red-600 drop-shadow" />
+            {/* PANAH — runcing keluar */}
+            <div className="absolute left-1/2 -top-2 -translate-x-1/2 z-20">
+              <div className="w-0 h-0 border-l-[10px] border-r-[10px] border-t-[16px] border-l-transparent border-r-transparent border-t-red-600 drop-shadow" />
             </div>
 
-            <svg viewBox="0 0 320 320" width={320} height={320} className="drop-shadow">
-              <defs>
-                <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="1" stdDeviation="1" floodOpacity="0.25" />
-                </filter>
-              </defs>
+            <motion.div
+              key={`wheel-${wheel.pendingSpin?.nonce ?? "idle"}-${wheel.activeIndex ?? -1}`}
+              className="relative w-[420px] h-[420px] rounded-full shadow-xl border-[6px] border-white overflow-hidden"
+              animate={{ rotate: toRot }}
+              initial={{ rotate: fromRot }}
+              transition={{ duration: durSec, ease: [0.22, 1, 0.36, 1] }}
+              style={{ willChange: "transform" }}
+            >
+              {/* BACKGROUND: offset STEP/2 supaya warna pas di tengah label */}
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: buildWheelBackground(N),
+                  transform: `rotate(${STEP / 2}deg)`,
+                }}
+              />
 
-              <circle cx={160} cy={160} r={r + 1} fill="#fff" filter="url(#soft)" />
+              {/* label irisan — digambar pakai DISPLAY order */}
+              {displayIds.map((id, i) => {
+                const t = byId[id];
+                const no =
+                  (t as any).groupNo ??
+                  (typeof t?.id === "string"
+                    ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined
+                    : undefined);
 
-              {/* group diputar */}
-              <motion.g
-                animate={{ rotate: angle }}
-                transition={{ duration: SPIN_S, ease: "easeInOut" }}
-                transform-origin={`${cx}px ${cy}px`}
-              >
-                {items.map((t, i) => {
-                  const start = i * seg;
-                  const end = start + seg;
-                  const mid = start + seg / 2;
-                  const labelR = r * 0.65;
-                  const lx = cx + labelR * Math.cos(toRad(mid));
-                  const ly = cy + labelR * Math.sin(toRad(mid));
-                  const isFirst = i === 0;
+                const centerDeg = i * STEP + STEP / 2; // 0° di atas
+                const r = 140;
+                const x = 210 + r * Math.sin((centerDeg * Math.PI) / 180);
+                const y = 210 - r * Math.cos((centerDeg * Math.PI) / 180);
 
-                  return (
-                    <g key={t.id}>
-                      <path
-                        d={arcPath(start, end)}
-                        fill={t.color || "#F1F5F9"}
-                        stroke={isFirst ? "#ef4444" : "#fff"}
-                        strokeWidth={isFirst ? 3 : 2}
-                      />
-                      <text x={lx} y={ly} style={labelStyle} transform={`rotate(${mid}, ${lx}, ${ly})`}>
-                        {`Kelompok ${getGroupNo(t, i)}`}
-                      </text>
-                    </g>
-                  );
-                })}
-              </motion.g>
-
-              {/* hub */}
-              <circle cx={cx} cy={cy} r={26} fill="#fff" stroke="#fecaca" strokeWidth={2} />
-              <circle cx={cx} cy={cy} r={8} fill="#ef4444" />
-            </svg>
-
-            {/* tombol operator */}
-            {!readonly && (
-              <div className="mt-3 flex items-center justify-center gap-2">
-                {!wheel ? (
-                  <button
-                    onClick={() => {
-                      setRevealIndex(-1);
-                      onGenerate?.(((Math.random() * 2 ** 31) ^ Date.now()) >>> 0);
+                return (
+                  <div
+                    key={id}
+                    className="absolute"
+                    style={{
+                      left: x,
+                      top: y,
+                      transform: `translate(-50%,-50%)`,
+                      width: 130,
+                      textAlign: "center",
                     }}
-                    className="px-4 py-2 rounded-xl bg-red-600 text-white shadow hover:bg-red-700"
                   >
-                    Mulai Undi (Buat Urutan)
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => { onAdvance?.(); }}
-                      disabled={wheel.activeIndex >= (wheel.queueIds.length - 1)}
-                      className={`px-4 py-2 rounded-xl text-white shadow ${
-                        wheel.activeIndex >= (wheel.queueIds.length - 1)
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-red-600 hover:bg-red-700"
-                      }`}
-                    >
-                      Putar Lagi
-                    </button>
-                    <button
-                      onClick={() => { setRevealIndex(-1); onReset?.(); }}
-                      className="px-4 py-2 rounded-xl border bg-white hover:bg-red-50 text-red-700 border-red-200"
-                    >
-                      Reset Undian
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* panel kanan */}
-          <div className="flex flex-col gap-4">
-            {/* Hasil Undian: tampil hanya sampai yang sudah direveal */}
-            {wheel && shownIndex >= 0 && (
-              <div>
-                <div className="text-xs uppercase tracking-wide text-black/60">Hasil Undian</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {items.slice(0, shownIndex + 1).map((t, i) => {
-                    const no = getGroupNo(t, i);
-                    const isCurrent = i === shownIndex;
-                    return (
-                      <span
-                        key={t.id}
-                        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs ${
-                          isCurrent ? "bg-red-50 border-red-200" : "bg-white"
-                        }`}
-                        style={{ borderColor: isCurrent ? "#fecaca" : "#e5e7eb", color: isCurrent ? "#b91c1c" : "#374151" }}
-                      >
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
-                        <span className="font-semibold tabular-nums">#{i + 1}</span>
-                        <span>{`Kelompok ${no}`}</span>
-                        {isCurrent ? <span className="ml-1 text-[10px] text-red-700">· sekarang</span> : null}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Kelompok Dimulai (setelah reveal) */}
-            {currentTeam && (
-              <div className="mt-1">
-                <div className="text-xs uppercase tracking-wide text-black/60 text-center">Kelompok Dimulai</div>
-                <div className="mt-2 rounded-xl border border-red-200 bg-white p-3">
-                  <div className="text-center">
-                    <div className="text-lg font-extrabold" style={{ color: currentTeam.color }}>
-                      {`Kelompok ${getGroupNo(currentTeam)}`}
-                    </div>
-                    <div className="text-[12px] text-black/60">
-                      Urutan #{shownIndex + 1}
+                    <div className="text-[14px] md:text-[15px] font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)] tracking-wide">
+                      {no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}
                     </div>
                   </div>
+                );
+              })}
 
-                  {Array.isArray(currentTeam.members) && currentTeam.members.length > 0 && (
-                    <div className="mt-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[15px] leading-6">
-                        {currentTeam.members.map((m, i) => (
-                          <div key={i} className="truncate">{m}</div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              {/* center */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-white rounded-full border-4 border-red-200 shadow-inner" />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-red-600 rounded-full shadow" />
+            </motion.div>
+
+            {!readonly && (
+              <div className="mt-4 flex items-center justify-center gap-3">
+                <button
+                  onClick={onSpin}
+                  disabled={
+                    isSpinning || displayIds.length === 0 || (wheel.activeIndex ?? -1) >= queueIds.length - 1
+                  }
+                  className="px-4 py-2 rounded-xl border border-red-300 bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  Putar Lagi
+                </button>
+                <button
+                  onClick={() => onGenerate(Date.now())}
+                  disabled={isSpinning}
+                  className="px-4 py-2 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40"
+                >
+                  Reset Undian
+                </button>
               </div>
             )}
-
-            {/* Info saat belum ada reveal */}
-            {wheel && shownIndex < 0 && (
-              <div className="text-[12px] text-black/60 italic">Tekan “Mulai Undi” atau “Putar Lagi” untuk memulai.</div>
-            )}
+            <div className="mt-3 text-center text-[11px] text-black/60">
+              Urutan akan tampil <b>setelah roda berhenti</b>.
+            </div>
           </div>
-        </div>
 
-        {/* footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-between">
-          <div className="text-[11px] text-black/50">
-            Urutan dibuat sekali (deterministik dengan seed) agar identik di semua device. Hasil ditampilkan setelah roda berhenti.
-          </div>
-          {!readonly && wheel && wheel.activeIndex >= (wheel.queueIds.length - 1) && (
-            <button
-              onClick={() => { setRevealIndex(-1); onReset?.(); }}
-              className="px-3 py-1.5 rounded-xl bg-red-600 text-white shadow hover:bg-red-700"
-            >
-              Selesai (Tutup & Bersihkan)
-            </button>
-          )}
+          {/* hasil + roster */}
+          <RightPane
+            byId={byId}
+            isSpinning={isSpinning}
+            revealedIds={revealedIds}
+            readonly={readonly}
+            onClose={onClose}
+          />
         </div>
       </div>
     </div>
   );
+}
+
+/* ===== Right Pane kecil (biar file ringkas) ===== */
+function RightPane({
+  byId,
+  revealedIds,
+  isSpinning,
+  readonly,
+  onClose,
+}: {
+  byId: Record<string, Team | undefined>;
+  revealedIds: string[];
+  isSpinning: boolean;
+  readonly: boolean;
+  onClose: () => void;
+}) {
+  function splitMembers(list: string[], cols: number) {
+    const per = Math.ceil(list.length / cols) || 1;
+    const out: string[][] = [];
+    for (let i = 0; i < cols; i++) out.push(list.slice(i * per, (i + 1) * per));
+    return out;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-[13px] font-semibold text-neutral-700">Hasil Undian</div>
+      <div className="flex flex-wrap gap-2">
+        {revealedIds.length === 0 ? (
+          <span className="text-xs text-black/50">Belum ada — silakan putar roda.</span>
+        ) : (
+          revealedIds.map((id, idx) => {
+            const dot = ["#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#a78bfa", "#22c55e"][idx % 6];
+            const t = byId[id];
+            const no =
+              (t as any)?.groupNo ??
+              (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t!.id)?.[1]) || undefined : undefined);
+            const now = idx === revealedIds.length - 1 && !isSpinning;
+            return (
+              <div
+                key={id}
+                className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-white ${
+                  now ? "border-red-300 text-red-700" : "border-neutral-200 text-neutral-700"
+                }`}
+              >
+                <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: dot }} />
+                <span className="opacity-70">#{idx + 1}</span>
+                <span className="font-medium">{no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}</span>
+                {now ? <span className="ml-1 text-[11px] text-red-600">– sekarang</span> : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+        <div className="px-4 py-3 border-b text-[13px] text-neutral-700 font-semibold">Kelompok Dimulai</div>
+        <div className="p-4">
+          {revealedIds.length === 0 ? (
+            <div className="text-sm text-black/60">Belum ada hasil.</div>
+          ) : (
+            (() => {
+              const currentId = revealedIds[revealedIds.length - 1];
+              const t = byId[currentId];
+              const no =
+                (t as any)?.groupNo ??
+                (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t!.id)?.[1]) || undefined : undefined);
+              const cols = splitMembers(t?.members ?? [], 2);
+              return (
+                <div>
+                  <div className="text-center text-red-700 font-bold text-lg">
+                    {no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}
+                  </div>
+                  <div className="text-center text-[11px] text-black/60 mb-3">Urutan #{revealedIds.length}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-1 text-[14px]">
+                    {cols.map((col, i) => (
+                      <div key={i} className="space-y-1">
+                        {col.map((m, j) => (
+                          <div key={j}>{m}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </div>
+      </div>
+
+      {!readonly && (
+        <div className="pt-2">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 shadow disabled:opacity-40"
+            disabled={isSpinning}
+          >
+            Selesai (Tutup & Bersihkan)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== helpers ===== */
+function buildWheelBackground(n: number) {
+  const colors = ["#22c55e", "#6366f1", "#ef4444", "#10b981", "#a855f7", "#f59e0b"];
+  const seg = 360 / n;
+  const stops: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const c = colors[i % colors.length];
+    const a0 = i * seg;
+    const a1 = (i + 1) * seg;
+    stops.push(`${c} ${a0}deg ${a1}deg`);
+  }
+  // 0° di atas (sinkron dengan posisi label); offset setengah langkah diberikan di layer background
+  return `conic-gradient(from -90deg, ${stops.join(",")})`;
 }
