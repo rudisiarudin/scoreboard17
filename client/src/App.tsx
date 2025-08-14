@@ -1,7 +1,7 @@
 // src/App.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { BoardState, WheelState } from "@/types";
+import type { BoardState } from "@/types";
 import { loadState, saveState } from "@/lib/state";
 import { computeTotals } from "@/lib/totals";
 import TeamCard from "@/components/TeamCard";
@@ -27,67 +27,39 @@ export default function App() {
   const [showConfetti, setShowConfetti] = useState(false);
 
   const bcRef = useRef<BroadcastChannel | null>(null);
+  const lastRemoteVersionRef = useRef<number | null>(null);
   const stateVersionRef = useRef<number>(state.version);
-  useEffect(() => { stateVersionRef.current = state.version; }, [state.version]);
+  useEffect(() => {
+    stateVersionRef.current = state.version;
+  }, [state.version]);
 
-  /* ============== Persist + Broadcast (INSTAN) ============== */
+  // persist + broadcast
   useEffect(() => {
     saveState(state);
     try {
-      // Simpan juga versi untuk fallback storage event
+      bcRef.current?.postMessage({ type: "STATE", version: state.version });
       localStorage.setItem("board:lastVersion", String(state.version));
-      // ⬇️ KIRIM STATE PENUH supaya tab lain apply tanpa delay
-      bcRef.current?.postMessage({ type: "STATE_FULL", version: state.version, payload: state });
     } catch {}
   }, [state]);
-
-  // Daftarkan BroadcastChannel lebih awal + listener aktif (tanpa delay)
   useEffect(() => {
     try {
       bcRef.current = new BroadcastChannel("board-sync");
-      bcRef.current.onmessage = (ev: MessageEvent) => {
-        const msg = (ev as any)?.data;
-        if (!msg) return;
-        // Terima payload penuh (instan)
-        if (msg.type === "STATE_FULL" && msg.payload) {
-          const next = msg.payload as BoardState;
-          const incoming = typeof next.version === "number" ? next.version : -1;
-          const localv = stateVersionRef.current ?? 0;
-          if (audienceMode || incoming > localv) {
-            setState(next);
-          }
-          return;
-        }
-        // Fallback: hanya sinyal (ambil dari localStorage)
-        if (msg.type === "STATE") {
-          const next = loadState();
-          const incoming = typeof next.version === "number" ? next.version : -1;
-          const localv = stateVersionRef.current ?? 0;
-          if (audienceMode || incoming > localv) {
-            setState(next);
-          }
-        }
-      };
     } catch {}
-
     return () => {
       try {
-        if (bcRef.current) {
-          (bcRef.current.onmessage as any) = null;
-          bcRef.current.close();
-        }
+        bcRef.current?.close();
       } catch {}
     };
-  }, [audienceMode]);
+  }, []);
 
-  /* ============== Hash → audience mode ============== */
+  // hash → audience mode
   useEffect(() => {
     const onHash = () => setAudienceMode(location.hash === "#audience");
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  /* ============== Totals & ranking ============== */
+  // totals & ranking
   const totals = useMemo(() => computeTotals(state.teams, state.events, state.scores), [state]);
   const ranked = useMemo(
     () =>
@@ -97,7 +69,7 @@ export default function App() {
     [state.teams, totals],
   );
 
-  /* ============== Confetti saat pimpinan berubah ============== */
+  // confetti saat pimpinan berubah
   useEffect(() => {
     if (ranked[0]?.id && ranked[0]?.id !== lastTop) {
       setLastTop(ranked[0].id);
@@ -121,6 +93,7 @@ export default function App() {
     });
   }
 
+  // pilih tab; 'summary' & 'roster' tidak mengubah currentEventId (tetap null)
   function setActive(tab: string) {
     setActiveTab(tab);
     if (!audienceMode) {
@@ -128,12 +101,20 @@ export default function App() {
     }
   }
 
-  useEffect(() => { setActiveTab(state.currentEventId ?? "summary"); }, [state.currentEventId]);
+  // sinkronkan tab saat currentEventId datang dari realtime
+  useEffect(() => {
+    setActiveTab(state.currentEventId ?? "summary");
+  }, [state.currentEventId]);
 
   async function toggleFullscreen() {
     try {
-      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen(); setFullscreen(true); }
-      else { await document.exitFullscreen(); setFullscreen(false); }
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setFullscreen(false);
+      }
     } catch {}
   }
   async function pushNow() {
@@ -142,57 +123,71 @@ export default function App() {
       .upsert({ id: ROW_ID, state, version: state.version, updated_at: new Date().toISOString() });
     if (error) console.error("SUPABASE_UPSERT_ERROR_IMMEDIATE", error);
   }
-  async function enterAudience() { try { await pushNow(); } catch {} location.hash = "#audience"; }
-  function exitAudience() { location.hash = ""; }
+  async function enterAudience() {
+    try {
+      await pushNow();
+    } catch {}
+    location.hash = "#audience";
+  }
+  function exitAudience() {
+    location.hash = "";
+  }
 
-  /* ============== Supabase Realtime + Storage fallback ============== */
-  useEffect(() => {
-    let alive = true;
+  // ============== Supabase Realtime ==============
+useEffect(() => {
+  let alive = true;
 
-    const apply = (next: BoardState) => {
-      if (!alive) return;
-      const incoming = typeof next.version === "number" ? next.version : -1;
-      const localv = stateVersionRef.current ?? 0;
-      // Penonton: selalu terima. Operator: hanya jika lebih baru.
-      if (audienceMode || incoming > localv) setState(next);
-    };
+  // ⬇️ di mode penonton, selalu terima state remote (abaikan versi lokal)
+  const apply = (next: BoardState) => {
+    if (!alive) return;
+    const incoming = typeof next.version === "number" ? next.version : -1;
+    const localv = stateVersionRef.current ?? 0;
 
-    // initial fetch
-    supabase
-      .from("board")
-      .select("state, version")
-      .eq("id", ROW_ID)
-      .single()
-      .then(({ data, error }) => {
-        if (error) console.error("SUPABASE_SELECT_ERROR", error);
-        if (data?.state) apply(data.state as BoardState);
-      });
+    if (audienceMode || incoming !== localv) {
+      lastRemoteVersionRef.current = incoming;
+      setState(next);
+    }
+  };
 
-    // realtime
-    const channel = supabase
-      .channel("board-main")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "board", filter: `id=eq.${ROW_ID}` },
-        (payload) => {
-          const next = (payload.new as any)?.state as BoardState | undefined;
-          if (next) apply(next);
-        },
-      )
-      .subscribe(() => {});
+  supabase
+    .from("board")
+    .select("state, version")
+    .eq("id", ROW_ID)
+    .single()
+    .then(({ data, error }) => {
+      if (error) console.error("SUPABASE_SELECT_ERROR", error);
+      if (data?.state) apply(data.state as BoardState);
+    });
 
-    // storage fallback
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "state" || e.key === "board:lastVersion") apply(loadState());
-    };
-    window.addEventListener("storage", onStorage);
+  const channel = supabase
+    .channel("board-main")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "board", filter: `id=eq.${ROW_ID}` },
+      (payload) => {
+        const next = (payload.new as any)?.state as BoardState | undefined;
+        if (next) apply(next);
+      },
+    )
+    .subscribe(() => {});
 
-    return () => {
-      alive = false;
-      supabase.removeChannel(channel);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [audienceMode]);
+  const onBC = (ev: MessageEvent) => {
+    if ((ev as any)?.data?.type === "STATE") apply(loadState());
+  };
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === "state" || e.key === "board:lastVersion") apply(loadState());
+  };
+  if (bcRef.current) bcRef.current.onmessage = onBC;
+  window.addEventListener("storage", onStorage);
+
+  return () => {
+    alive = false;
+    supabase.removeChannel(channel);
+    if (bcRef.current) (bcRef.current.onmessage as any) = null;
+    window.removeEventListener("storage", onStorage);
+  };
+}, [audienceMode]); // ⬅️ penting: re-bind saat masuk/keluar mode penonton
+
 
   /* ====== LOGIKA: roster-only jika belum ada nilai ====== */
   function eventHasAnyScore(eventId: string) {
@@ -207,18 +202,20 @@ export default function App() {
   const showRosterOnly = activeEvent ? !eventHasAnyScore(activeEvent.id) : !globalHasAnyScore;
 
   /* ================= SPIN WHEEL — YEL-YEL ================= */
+
+  // buka modal wheel (operator)
   function openWheel() {
     if (audienceMode) return;
-    // guard runtimenya kalau state lama belum punya wheel
-    const w = (state.wheel as WheelState | undefined);
+    const w = (state as any).wheel;
     if (!w || !w.queueIds?.length) {
       generateWheel(Date.now());
     } else {
-      bump((s) => ({ ...s, wheel: { ...s.wheel, isOpen: true } }));
+      bump((s) => ({ ...s, wheel: { ...(s as any).wheel, isOpen: true } as any }));
       void pushNow();
     }
   }
 
+  // generate / reset urutan
   function generateWheel(seed?: number) {
     if (audienceMode) return;
     const ids = [...state.teams.map((t) => t.id)];
@@ -231,51 +228,69 @@ export default function App() {
     }
     bump((s) => ({
       ...s,
-      wheel: {
-        seed: sd,
-        queueIds: ids,
-        activeIndex: -1,
-        isOpen: true,
-        pendingSpin: null,
-      },
-    }));
+      wheel: { seed: sd, queueIds: ids, activeIndex: -1, isOpen: true, pendingSpin: null },
+    }) as any);
     void pushNow();
   }
 
+  // mulai putar
   function startSpin() {
     if (audienceMode) return;
-    const w = (state.wheel as WheelState | undefined);
+
+    const w = (state as any).wheel as any;
     if (!w || w.pendingSpin) return;
+
     const nextIndex = Math.min((w.activeIndex ?? -1) + 1, w.queueIds.length - 1);
     const duration = 4200 + Math.floor(Math.random() * 600);
     const now = Date.now();
+
     bump((s) => ({
       ...s,
-      wheel: { ...w!, pendingSpin: { targetIndex: nextIndex, startedAt: now, durationMs: duration, nonce: now } },
-    }));
+      wheel: {
+        ...w,
+        pendingSpin: {
+          targetIndex: nextIndex,
+          startedAt: now,
+          durationMs: duration,
+          nonce: now,
+        },
+      },
+    }) as any);
     void pushNow();
+
     setTimeout(() => {
-      bump((s) => ({ ...s, wheel: { ...s.wheel, activeIndex: nextIndex, pendingSpin: null } }));
+      bump((s) => ({
+        ...s,
+        wheel: {
+          ...(s as any).wheel,
+          activeIndex: nextIndex,
+          pendingSpin: null,
+        },
+      }) as any);
       void pushNow();
     }, duration + 50);
   }
 
+  // tutup wheel
   function closeWheel() {
     if (audienceMode) return;
-    bump((s) => ({ ...s, wheel: { ...s.wheel, isOpen: false } }));
+    bump((s) => ({ ...s, wheel: { ...(s as any).wheel, isOpen: false } } as any));
     void pushNow();
   }
 
-  /* ===================== THINKING QUIZ (STATE & LOGIC) ===================== */
+  /* ===================== THINKING QUIZ (STATE) ===================== */
+  // — penonton LIHAT versi inline (bukan overlay)
+  // — operator tetap pakai overlay untuk kontrol
   type ThinkingState = {
     open: boolean;
     index: number;
     selected: number | null;
     reveal: boolean;
-    visible: number; // 0..4
+    visible: number; // 0..4 (berapa opsi yang sudah diumumkan)
   } | null;
 
   const thinking = ((state as any).thinking as ThinkingState) ?? null;
+
   const totalQ = QUESTIONS_THINKING.length;
   const tqIndex = Math.min(Math.max(thinking?.index ?? 0, 0), Math.max(0, totalQ - 1));
   const tqSelected = thinking?.selected ?? null;
@@ -283,26 +298,43 @@ export default function App() {
   const tqVisible = Math.max(0, Math.min(thinking?.visible ?? 0, 4));
   const tqMcq: MCQ | null = totalQ > 0 ? QUESTIONS_THINKING[tqIndex] : null;
 
+  // operator overlay open/close
   const overlayOpen = !!thinking?.open;
-  function baseThinking(index = 0) { return { open: true, index, selected: null, reveal: false, visible: 0 } as NonNullable<ThinkingState>; }
+
+  function baseThinking(index = 0) {
+    return { open: true, index, selected: null, reveal: false, visible: 0 };
+  }
   function thinkingOpen() {
     if (audienceMode || totalQ === 0) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); return { ...s, thinking: { ...prev, open: true, reveal: false } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      return { ...s, thinking: { ...prev, open: true, reveal: false } } as any;
+    });
     void pushNow();
   }
   function thinkingClose() {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); return { ...s, thinking: { ...prev, open: false } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      return { ...s, thinking: { ...prev, open: false } } as any;
+    });
     void pushNow();
   }
   function thinkingSelect(i: number) {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); const needVisible = Math.max(prev.visible ?? 0, i + 1); return { ...s, thinking: { ...prev, selected: i, visible: needVisible } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      const needVisible = Math.max(prev.visible ?? 0, i + 1);
+      return { ...s, thinking: { ...prev, selected: i, visible: needVisible } } as any;
+    });
     void pushNow();
   }
   function thinkingReveal() {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); return { ...s, thinking: { ...prev, reveal: true, visible: 4, open: true } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      return { ...s, thinking: { ...prev, reveal: true, visible: 4, open: true } } as any;
+    });
     void pushNow();
   }
   function thinkingPrev() {
@@ -326,22 +358,33 @@ export default function App() {
   }
   function thinkingNextOption() {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); const next = Math.min(4, (prev.visible ?? 0) + 1); return { ...s, thinking: { ...prev, visible: next, open: true } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      const next = Math.min(4, (prev.visible ?? 0) + 1);
+      return { ...s, thinking: { ...prev, visible: next, open: true } } as any;
+    });
     void pushNow();
   }
   function thinkingResetOptions() {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); return { ...s, thinking: { ...prev, visible: 0, selected: null, reveal: false, open: true } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      return { ...s, thinking: { ...prev, visible: 0, selected: null, reveal: false, open: true } } as any;
+    });
     void pushNow();
   }
   function thinkingShowAllOptions() {
     if (audienceMode) return;
-    bump((s) => { const prev = (s as any).thinking ?? baseThinking(0); return { ...s, thinking: { ...prev, visible: 4, open: true } } as any; });
+    bump((s) => {
+      const prev = (s as any).thinking ?? baseThinking(0);
+      return { ...s, thinking: { ...prev, visible: 4, open: true } } as any;
+    });
     void pushNow();
   }
 
   /* ===================== UI ===================== */
-  const wheelOpen = !!state.wheel?.isOpen;
+  const wheelOpen = !!(state as any).wheel?.isOpen;
+
   return (
     <div className="min-h-screen w-full relative">
       <HeroBackground />
@@ -351,24 +394,17 @@ export default function App() {
         <div className="relative mx-auto w-full max-w-[120rem] px-4 lg:px-8 py-6">
           <HeaderPoster />
 
-          {/* Thinking Quiz — Penonton pakai MODAL (readonly), mirror operator */}
-          <MCQOverlay
-            open={!!thinking?.open && !!tqMcq}
-            mcq={tqMcq}
-            selected={tqSelected}
-            reveal={tqReveal}
-            visible={Math.max(0, Math.min(thinking?.visible ?? 0, 4))}
-            readonly
-            onSelect={() => {}}
-            onReveal={() => {}}
-            onClose={() => {}}
-            onPrev={() => {}}
-            onNext={() => {}}
-            onRandom={() => {}}
-            onNextOption={() => {}}
-            onResetOptions={() => {}}
-            onShowAllOptions={() => {}}
-          />
+          {/* ===== Inline Thinking Quiz for Audience (bukan overlay) ===== */}
+          {totalQ > 0 && (
+            <div className="mt-6">
+              <AudienceMCQView
+                mcq={tqMcq}
+                selected={tqSelected}
+                reveal={tqReveal}
+                visible={tqVisible}
+              />
+            </div>
+          )}
 
           {/* Banner judul section lainnya */}
           {(() => {
@@ -378,7 +414,9 @@ export default function App() {
                 <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow border border-red-200">
                   {ev ? (
                     <div className="text-center">
-                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">Sedang Dipertandingkan</div>
+                      <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">
+                        Sedang Dipertandingkan
+                      </div>
                       <div className="text-sm md:text-base text-neutral-800 font-semibold">
                         {ev.name} <span className="text-xs text-red-700">· Maks {ev.weight}</span>
                       </div>
@@ -407,10 +445,16 @@ export default function App() {
           {/* Floating controls */}
           <div className="fixed right-4 bottom-4 z-40">
             <div className="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-2 rounded-2xl border border-red-200 shadow-lg">
-              <button onClick={exitAudience} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
+              <button
+                onClick={exitAudience}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
                 Keluar Mode Penonton
               </button>
-              <button onClick={toggleFullscreen} className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50">
+              <button
+                onClick={toggleFullscreen}
+                className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
                 {fullscreen ? "Keluar Fullscreen" : "Full Screen"}
               </button>
             </div>
@@ -421,7 +465,7 @@ export default function App() {
             open={wheelOpen}
             onClose={() => {}}
             teams={state.teams}
-            wheel={state.wheel}
+            wheel={(state as any).wheel ?? null}
             readonly={true}
             onGenerate={() => {}}
             onSpin={() => {}}
@@ -432,25 +476,6 @@ export default function App() {
         /* ===== OPERATOR MODE ===== */
         <div className="relative mx-auto w-full max-w-[120rem] px-4 lg:px-8 py-6">
           <HeaderPoster />
-
-          {/* Thinking Quiz (operator overlay / pilihan tampil & bisa kontrol) */}
-          <MCQOverlay
-            open={overlayOpen}
-            mcq={tqMcq}
-            selected={tqSelected}
-            reveal={tqReveal}
-            visible={tqVisible}
-            readonly={false}
-            onSelect={thinkingSelect}
-            onReveal={thinkingReveal}
-            onClose={thinkingClose}
-            onPrev={thinkingPrev}
-            onNext={thinkingNext}
-            onRandom={thinkingRandom}
-            onNextOption={thinkingNextOption}
-            onResetOptions={thinkingResetOptions}
-            onShowAllOptions={thinkingShowAllOptions}
-          />
 
           {/* Tabs */}
           <div className="mt-6 flex w-full justify-center">
@@ -572,6 +597,8 @@ export default function App() {
               >
                 Spin Yel-Yel
               </button>
+
+              {/* Thinking Quiz (operator opens overlay) */}
               <button
                 onClick={thinkingOpen}
                 className="px-3 py-1.5 rounded-xl border border-indigo-300 bg-indigo-600 text-white hover:bg-indigo-700"
@@ -579,6 +606,7 @@ export default function App() {
               >
                 Thinking Quiz
               </button>
+
               <button
                 onClick={enterAudience}
                 className="px-3 py-1.5 rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50"
@@ -599,12 +627,98 @@ export default function App() {
             open={wheelOpen}
             onClose={closeWheel}
             teams={state.teams}
-            wheel={state.wheel}
+            wheel={(state as any).wheel ?? null}
             readonly={false}
             onGenerate={(seed) => generateWheel(seed)}
             onSpin={startSpin}
             onReset={() => generateWheel(Date.now())}
           />
+        </div>
+      )}
+
+      {/* MCQ Overlay: hanya untuk OPERATOR */}
+      {!audienceMode && (
+        <MCQOverlay
+          open={overlayOpen}
+          mcq={tqMcq}
+          selected={tqSelected}
+          reveal={tqReveal}
+          visible={tqVisible}
+          readonly={false}
+          onSelect={thinkingSelect}
+          onReveal={thinkingReveal}
+          onClose={thinkingClose}
+          onPrev={thinkingPrev}
+          onNext={thinkingNext}
+          onRandom={thinkingRandom}
+          onNextOption={thinkingNextOption}
+          onResetOptions={thinkingResetOptions}
+          onShowAllOptions={thinkingShowAllOptions}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ===================== Audience Inline MCQ (simple) ===================== */
+function AudienceMCQView({
+  mcq,
+  selected,
+  reveal,
+  visible,
+}: {
+  mcq: MCQ | null;
+  selected: number | null;
+  reveal: boolean;
+  visible: number;
+}) {
+  if (!mcq) return null;
+  const total = mcq.choices.length;
+  const shown = Math.max(0, Math.min(visible, total));
+  return (
+    <div className="rounded-3xl border border-neutral-200 bg-white/95 backdrop-blur shadow-lg p-6 md:p-8">
+      <div className="text-center mb-5">
+        <div className="text-[11px] md:text-xs text-red-700 font-semibold tracking-wide">Lomba — The Gesit Way of Thinking</div>
+        <div className="text-2xl md:text-3xl font-extrabold text-neutral-900 leading-snug mt-1">{mcq.text}</div>
+      </div>
+
+      {mcq.imageUrl && (
+        <div className="rounded-2xl overflow-hidden border mb-5">
+          <img src={mcq.imageUrl} alt="" className="w-full object-contain" />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {mcq.choices.map((c, i) => {
+          const isVisible = i < shown || reveal;
+          if (!isVisible) return null;
+          const isSel = selected === i;
+          const isCorrect = mcq.correct === i;
+          let cls =
+            "w-full rounded-xl border px-4 py-4 text-[16px] flex items-center gap-3 h-[64px]";
+          if (reveal && mcq.correct != null) {
+            cls += isCorrect
+              ? " border-green-300 bg-green-50"
+              : isSel
+              ? " border-red-300 bg-red-50"
+              : " border-neutral-200 bg-white";
+          } else {
+            cls += " border-neutral-200 bg-white";
+          }
+          return (
+            <div key={i} className={cls}>
+              <span className="inline-flex w-8 h-8 rounded-full border items-center justify-center text-sm font-semibold">
+                {String.fromCharCode(65 + i)}
+              </span>
+              <span>{c}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {reveal && mcq.correct != null && (
+        <div className="mt-4 text-base text-green-700 font-semibold text-center">
+          Jawaban Benar: {String.fromCharCode(65 + mcq.correct)} — {mcq.choices[mcq.correct]}
         </div>
       )}
     </div>
@@ -638,15 +752,24 @@ function HeaderPoster() {
     <div className="relative w-full mt-6">
       <div className="grid grid-cols-[120px_1fr_120px] md:grid-cols-[140px_1fr_140px] items-center px-8">
         <div className="w-[120px] md:w-[140px] justify-self-start">
-          <img src="/logo-company.png" alt="Logo Perusahaan" className="h-16 md:h-20 max-w-full object-contain mx-auto" />
+          <img
+            src="/logo-company.png"
+            alt="Logo Perusahaan"
+            className="h-16 md:h-20 max-w-full object-contain mx-auto"
+          />
         </div>
 
         <div className="text-center">
           <div className="mx-auto w-fit rounded-xl bg-white/85 backdrop-blur px-4 py-1.5 shadow">
-            <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">DIRGAHAYU REPUBLIK INDONESIA</div>
+            <div className="text-red-700 tracking-[0.16em] text-[11px] md:text-xs font-semibold">
+              DIRGAHAYU REPUBLIK INDONESIA
+            </div>
             <div className="text-neutral-700 text-[11px] md:text-xs mt-0.5">17 AGUSTUS 2025</div>
           </div>
-          <h1 className="mt-3 font-extrabold text-red-700 drop-shadow-md leading-tight" style={{ fontSize: "clamp(2rem,2.8vw,3.2rem)" }}>
+          <h1
+            className="mt-3 font-extrabold text-red-700 drop-shadow-md leading-tight"
+            style={{ fontSize: "clamp(2rem,2.8vw,3.2rem)" }}
+          >
             BERSATU KITA GESIT
           </h1>
           <p className="mt-2 text-neutral-800 text-[13px] md:text-sm max-w-xl mx-auto backdrop-blur px-3 py-1.5">

@@ -48,13 +48,8 @@ export default function AudienceMatrix({
                     />
                     <div className="leading-tight">
                       <div className="font-medium" style={{ color: t.color }}>
-                        {t.name}
+                       Kelompok {groupNo}
                       </div>
-                      {groupNo ? (
-                        <div className="text-[11px] text-black/60">
-                          kelompok {groupNo}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 </td>
