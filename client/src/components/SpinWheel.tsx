@@ -80,26 +80,6 @@ export default function SpinWheel({
 
   const durSec = isSpinning ? (wheel.pendingSpin!.durationMs ?? 4200) / 1000 : 0.001;
 
-  function GroupPill({ idx, id, now }: { idx: number; id: string; now?: boolean }) {
-    const t = byId[id];
-    const no =
-      (t as any)?.groupNo ??
-      (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
-    const dot = ["#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#a78bfa", "#22c55e"][idx % 6];
-    return (
-      <div
-        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-white ${
-          now ? "border-red-300 text-red-700" : "border-neutral-200 text-neutral-700"
-        }`}
-      >
-        <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: dot }} />
-        <span className="opacity-70">#{idx + 1}</span>
-        <span className="font-medium">{no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}</span>
-        {now ? <span className="ml-1 text-[11px] text-red-600">– sekarang</span> : null}
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center">
       <div className="relative w-full max-w-[1120px] mx-3 rounded-2xl bg-white shadow-2xl border border-red-200">
