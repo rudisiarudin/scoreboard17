@@ -1,25 +1,7 @@
+// src/components/SpinWheel.tsx
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import type { Team } from "@/types";
-
-type PendingSpin =
-  | {
-      targetIndex: number; // index di QUEUE (urutan hasil)
-      startedAt: number;
-      durationMs: number;
-      nonce?: number;
-    }
-  | null;
-
-type WheelState =
-  | {
-      seed: number;
-      queueIds: string[]; // urutan hasil (diacak saat reset)
-      activeIndex: number; // index terakhir di QUEUE, -1 = belum ada hasil
-      isOpen: boolean;
-      pendingSpin: PendingSpin;
-    }
-  | null;
+import type { Team, WheelState } from "@/types";
 
 export default function SpinWheel({
   open,
@@ -34,7 +16,7 @@ export default function SpinWheel({
   open: boolean;
   onClose: () => void;
   teams: Team[];
-  wheel: WheelState;
+  wheel: WheelState | null; // boleh null; App sudah kirim non-null tapi tetap aman
   readonly: boolean;
   onGenerate: (seed?: number) => void;
   onSpin: () => void;
@@ -79,26 +61,6 @@ export default function SpinWheel({
   const toRot = isSpinning ? toRotBase - 360 * 5 : toRotBase; // 5 putaran penuh
 
   const durSec = isSpinning ? (wheel.pendingSpin!.durationMs ?? 4200) / 1000 : 0.001;
-
-  function GroupPill({ idx, id, now }: { idx: number; id: string; now?: boolean }) {
-    const t = byId[id];
-    const no =
-      (t as any)?.groupNo ??
-      (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t.id)?.[1]) || undefined : undefined);
-    const dot = ["#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#a78bfa", "#22c55e"][idx % 6];
-    return (
-      <div
-        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs bg-white ${
-          now ? "border-red-300 text-red-700" : "border-neutral-200 text-neutral-700"
-        }`}
-      >
-        <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: dot }} />
-        <span className="opacity-70">#{idx + 1}</span>
-        <span className="font-medium">{no ? `Kelompok ${no}` : t?.name ?? "Kelompok"}</span>
-        {now ? <span className="ml-1 text-[11px] text-red-600">– sekarang</span> : null}
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center">
@@ -291,7 +253,7 @@ function RightPane({
               const no =
                 (t as any)?.groupNo ??
                 (typeof t?.id === "string" ? Number(/^kel(\d+)$/i.exec(t!.id)?.[1]) || undefined : undefined);
-              const cols = splitMembers(t?.members ?? [], 2);
+              const cols = splitMembers((t as any)?.members ?? [], 2);
               return (
                 <div>
                   <div className="text-center text-red-700 font-bold text-lg">
